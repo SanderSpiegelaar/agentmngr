@@ -140,3 +140,18 @@ registry target or agent-specific skills directory is used. `skm on <skill>` and
 `skm off <skill>` call the core API; `--dry-run` prints the plan and issues, and
 refusals exit 3. CLI initialization may still create the manager layout, logs and
 SQLite database during a dry run, but does not save desired state or apply links.
+
+## skills.sh search (T-025)
+
+`search::SearchClient::from_env()` selects `SKILLSMGR_SKILLS_API`, then
+`SKILLS_API_URL`, then `https://skills.sh` (empty overrides are ignored).
+`SearchClient::new(base_url)` supplies an explicit base URL. `search(query, limit)`
+returns `SearchResult` entries with name, source, skill ID and installs;
+`SearchResult::install_source()` yields `owner/repo@skill` for the install flow.
+Results without an owner/repo source or skill ID are omitted.
+Pass 50 for the default UI limit. This is blocking I/O for a worker thread, with
+a 3-second total timeout and 1-second DNS/connect timeouts. Failed HTTP requests,
+body reads and malformed responses return `E_NETWORK`. Successful results are
+cached in memory per client and exact query/limit for 10 minutes, including empty
+results. Reuse the client to retain its cache. No downloads or leaderboard calls.
+The `live-tests` Cargo feature enables the otherwise excluded live smoke test.
