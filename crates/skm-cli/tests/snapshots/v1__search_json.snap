@@ -4,9 +4,9 @@ expression: "snapshots[1]"
 ---
 [
   {
-    "install_source": "acme/tools@review",
-    "installs": 123,
     "name": "Code review",
-    "source": "acme/tools"
+    "source": "acme/tools",
+    "install_source": "acme/tools@review",
+    "installs": 123
   }
 ]

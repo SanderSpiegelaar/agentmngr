@@ -731,7 +731,7 @@ fn remove(c: &Context, text: &str, off: bool) -> Result<i32, Error> {
     let item = item_ref(c, text)?;
     let active = active(c, &item)?;
     if !active.is_empty() && !off {
-        return Err(Error::ForeignTarget(
+        return Err(Error::ItemActive(
             "item is active; use --off to disable it before removal".into(),
         ));
     }

@@ -12,7 +12,7 @@ KIND	NAME	DESCRIPTION
 $ skm show review
 skill review
 Review code
-{"active":[],"description":"Review code","kind":"skill","metadata":{"allowed-tools":null,"compatibility":null,"description":"Review code","license":null,"metadata":{},"name":"review"},"name":"review","path":"<ROOT>/manager/library/skills/review","problems":[],"source":null}
+{"kind":"skill","name":"review","description":"Review code","path":"<ROOT>/manager/library/skills/review","metadata":{"name":"review","description":"Review code","license":null,"compatibility":null,"metadata":{},"allowed-tools":null},"source":null,"active":[],"problems":[]}
 
 $ skm status
 1 items, 1 projects, 0 pending

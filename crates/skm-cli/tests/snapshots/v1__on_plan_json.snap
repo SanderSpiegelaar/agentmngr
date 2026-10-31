@@ -3,17 +3,18 @@ source: crates/skm-cli/tests/v1.rs
 expression: plan
 ---
 {
+  "ok": true,
   "changes": {
+    "scope": "global",
     "item": {
       "kind": "Skill",
       "name": "review"
     },
-    "on": true,
-    "scope": "global"
+    "on": true
   },
-  "ok": true,
   "plans": [
     {
+      "summary": "1 actions, 0 issues",
       "actions": [
         {
           "Link": {
@@ -22,8 +23,7 @@ expression: plan
           }
         }
       ],
-      "issues": [],
-      "summary": "1 actions, 0 issues"
+      "issues": []
     }
   ]
 }

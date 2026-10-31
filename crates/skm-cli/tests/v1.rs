@@ -378,7 +378,7 @@ fn structured_errors_and_exit_codes() {
     }
     f.text(&["on", "review"]);
     let output = f.run(&["remove", "review", "--json"]);
-    assert_eq!(output.status.code(), Some(3));
+    assert_eq!(output.status.code(), Some(1));
     insta::assert_snapshot!("refusal_json", f.comparable(&output.stdout, true));
     let target = f.home.join(".agents/skills/review");
     fs::remove_file(&target).unwrap();

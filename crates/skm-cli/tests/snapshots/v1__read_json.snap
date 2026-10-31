@@ -5,9 +5,9 @@ expression: json
 $ skm list --json
 [
   {
-    "description": "Review code",
     "kind": "skill",
-    "name": "review"
+    "name": "review",
+    "description": "Review code"
   }
 ]
 
@@ -16,38 +16,38 @@ $ skm list --kind skill --scope global --json
 
 $ skm show review --json
 {
-  "active": [],
-  "description": "Review code",
   "kind": "skill",
+  "name": "review",
+  "description": "Review code",
+  "path": "<ROOT>/manager/library/skills/review",
   "metadata": {
-    "allowed-tools": null,
-    "compatibility": null,
+    "name": "review",
     "description": "Review code",
     "license": null,
+    "compatibility": null,
     "metadata": {},
-    "name": "review"
+    "allowed-tools": null
   },
-  "name": "review",
-  "path": "<ROOT>/manager/library/skills/review",
-  "problems": [],
-  "source": null
+  "source": null,
+  "active": [],
+  "problems": []
 }
 
 $ skm status --json
 {
-  "agents": [],
   "items": 1,
-  "pending": 0,
-  "pending_updates": 0,
+  "agents": [],
   "projects": [
     {
-      "auto_sync": true,
       "id": 2,
-      "mode": "copy",
+      "path": "<ROOT>/project",
       "name": "project",
-      "path": "<ROOT>/project"
+      "mode": "copy",
+      "auto_sync": true
     }
-  ]
+  ],
+  "pending": 0,
+  "pending_updates": 0
 }
 
 $ skm set list --json
@@ -69,22 +69,22 @@ $ skm set show toolkit --json
 $ skm project list --json
 [
   {
-    "auto_sync": true,
     "id": 2,
-    "mode": "copy",
+    "path": "<ROOT>/project",
     "name": "project",
-    "path": "<ROOT>/project"
+    "mode": "copy",
+    "auto_sync": true
   }
 ]
 
 $ skm doctor --json
 {
-  "cache": "<ROOT>/manager/cache",
-  "config": "<ROOT>/manager/config.toml",
-  "db": "<ROOT>/manager/state.db",
   "home": "<ROOT>/manager",
   "library": "<ROOT>/manager/library",
-  "lock": "<ROOT>/manager/lock",
+  "cache": "<ROOT>/manager/cache",
+  "trash": "<ROOT>/manager/trash",
   "logs": "<ROOT>/manager/logs",
-  "trash": "<ROOT>/manager/trash"
+  "config": "<ROOT>/manager/config.toml",
+  "db": "<ROOT>/manager/state.db",
+  "lock": "<ROOT>/manager/lock"
 }

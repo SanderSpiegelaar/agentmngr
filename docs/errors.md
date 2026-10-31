@@ -17,6 +17,7 @@
 | `E_SECRET_MISSING` | A required secret is unavailable. | Supply the required secret or environment variable. |
 | `E_SECRET_IN_PROJECT` | A secret cannot safely be rendered into a project. | Supply the secret through an environment variable; do not write it into the project. |
 | `E_PROJECT_EDITED` | Project contents changed after planning. | Review the project edits and create a new plan before applying. |
+| `E_ITEM_ACTIVE` | An item is still active and cannot be removed. | Pass --off to turn it off everywhere, or run `skm off` first. |
 | `E_IO` | A filesystem operation failed. | Check the path, permissions, and available disk space. |
 | `E_LOGGING` | Log file or subscriber initialization failed. | Check the logs directory and initialize logging only once. |
 | `E_DATABASE` | Database access, migration, or writer communication failed. | Check the database path and schema version, then reopen the store. |
