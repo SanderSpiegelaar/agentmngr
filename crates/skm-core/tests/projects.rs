@@ -687,6 +687,17 @@ fn unsupported_memberships_and_invalid_references_refuse_without_writes() {
 fn direct_non_skill_kinds_round_trip_and_m1_plans_only_universal_skills() {
     let (temp, paths, store, registry) = fixture();
     let project = projects::register(&store, &project_directory(&temp, "repo")).unwrap();
+    assert!(
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .env("HOME", &project.path)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", project.path.join("missing-config"))
+            .current_dir(&project.path)
+            .status()
+            .unwrap()
+            .success()
+    );
     for kind in [ItemKind::Mcp, ItemKind::Hook, ItemKind::Subagent] {
         projects::set_direct_item(&store, &registry, project.id, &item(kind, "shared"), None)
             .unwrap();
@@ -722,9 +733,12 @@ fn direct_non_skill_kinds_round_trip_and_m1_plans_only_universal_skills() {
         .unwrap()
         .remove(0)
         .plan;
-    assert_eq!(plan.actions.len(), 1);
+    assert_eq!(plan.actions.len(), 2);
     assert!(
         matches!(&plan.actions[0].action, Action::Link {target, to} if target == &project.path.join(".agents/skills/review") && to == &paths.library.join("skills/review"))
+    );
+    assert!(
+        matches!(&plan.actions[1].action, Action::WriteFile {target, ..} if target == &project.path.join(".git/info/exclude"))
     );
     assert!(!project.path.join(".agents").exists());
     assert!(!project.path.join(".claude").exists());
