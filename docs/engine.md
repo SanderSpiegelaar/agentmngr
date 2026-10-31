@@ -1,5 +1,29 @@
 # Engine API (T-017)
 
+## Install (T-024)
+
+`install::preview(paths, git, source)` returns a `Preview` that owns staged skill
+trees. `skills()` exposes names, repository-relative paths, descriptions, files,
+byte sizes, script/hook flags, and frontmatter warnings. Git mirrors are keyed by
+URL under `cache/git/`; later previews fetch the existing mirror. Discovery uses
+`ls-tree`; extraction uses system `tar`. Local sources are copied and verified
+with the engine's byte-, permission-, and symlink-sensitive tree hash. Links
+outside a skill directory are rejected. Preview work belongs on a worker thread.
+
+`install::install(paths, store, &preview, &[Selection { skill: index, collision }])`
+uses indices into `skills()`. `CollisionChoice::Abort` is the default;
+`Rename(name)` updates the staged frontmatter name; `Replace` journals the old
+tree in trash. `InstallResult::Collisions` returns typed names and targets before
+any library writes. Duplicate destinations still collide, even with `Replace`.
+
+`InstallResult::Applied { items, result }` exposes installed paths and provenance
+plus the engine `ApplyResult`. Callers must inspect its issues and failures;
+partial effects remain undoable through `result.op_id`. Items are returned only
+when the manifest write succeeds. Copies and base snapshots precede that write
+and are hash-checked by the engine. Provenance includes the Git commit or local
+origin, install timestamp, and npx-compatible `base_hash`. Pristine snapshots live
+at `cache/base/<name>/<base_hash>/`. Install does not enable skills in any scope.
+
 ## System Git (T-023)
 
 `git::GitRunner::new(timeout)` checks system Git >=2.30. `with_binary(path, timeout)`

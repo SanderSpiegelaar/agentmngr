@@ -8,6 +8,7 @@ pub mod frontmatter;
 pub mod git;
 pub mod global_skills;
 pub mod indexer;
+pub mod install;
 pub mod library;
 pub mod logging;
 pub mod paths;
