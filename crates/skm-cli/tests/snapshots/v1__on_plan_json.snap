@@ -1,0 +1,29 @@
+---
+source: crates/skm-cli/tests/v1.rs
+expression: plan
+---
+{
+  "changes": {
+    "item": {
+      "kind": "Skill",
+      "name": "review"
+    },
+    "on": true,
+    "scope": "global"
+  },
+  "ok": true,
+  "plans": [
+    {
+      "actions": [
+        {
+          "Link": {
+            "target": "<ROOT>/user/.agents/skills/review",
+            "to": "<ROOT>/manager/library/skills/review"
+          }
+        }
+      ],
+      "issues": [],
+      "summary": "1 actions, 0 issues"
+    }
+  ]
+}

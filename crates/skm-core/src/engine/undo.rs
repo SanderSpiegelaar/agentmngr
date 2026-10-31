@@ -40,6 +40,11 @@ pub fn undo(
     actor: &str,
     events: Option<&Sender<CoreEvent>>,
 ) -> Result<ApplyResult, Error> {
+    let plan = plan_undo(paths, store, op_id)?;
+    apply::apply_checked(paths, store, &plan, actor, events, true)
+}
+
+pub fn plan_undo(paths: &Paths, store: &Store, op_id: Option<i64>) -> Result<Plan, Error> {
     let operations = list_ops(store)?;
     let operation = operations
         .iter()
@@ -64,5 +69,6 @@ pub fn undo(
     plan.actions = inverse;
     plan.issues.clear();
     plan.summary = format!("Undo op {}: {}", operation.id, operation.summary);
-    apply::apply_checked(paths, store, &plan, actor, events, true)
+    apply::preflight_undo(paths, store, &plan)?;
+    Ok(plan)
 }

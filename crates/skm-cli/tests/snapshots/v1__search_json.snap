@@ -1,0 +1,12 @@
+---
+source: crates/skm-cli/tests/v1.rs
+expression: "snapshots[1]"
+---
+[
+  {
+    "install_source": "acme/tools@review",
+    "installs": 123,
+    "name": "Code review",
+    "source": "acme/tools"
+  }
+]

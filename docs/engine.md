@@ -1,5 +1,42 @@
 # Engine API (T-017)
 
+## CLI previews (T-031)
+
+`install::plan_install` returns either name collisions or an `InstallPlan` with
+the exact engine `plan` and installed `items`. Retain both it and the `Preview`
+until `InstallPlan::apply` finishes. Planning creates no scope, operations or
+library files. Apply binds the preview scope to Global and applies that plan.
+`projects::plan_staged_project` accepts name-to-staged-tree paths for planning
+install-and-enable together; link destinations and lock provenance still refer
+to the final library. Callers apply the install successfully before these plans.
+
+`projects::plan_registration` returns the proposed registration report and guarded
+reattachment plan without registering or claiming anything. `engine::plan_undo`
+accepts paths, store and optional operation ID, returning the same inverse plan
+as undo after read-only preflight. Undo repeats preflight under the apply lock.
+`indexer::preview_reindex` runs full reindex in a rolled-back transaction and
+returns the same counts without persisting index rows. `global_skills::validate_name`
+is public for CLI item-name validation.
+
+CLI JSON mutation output contains `changes` and `plans`, with engine actions and
+issues. Apply failures add `done` and `failed` and set `ok` to false in that same
+document. Human previews list the same actions. Every mutation supports
+`--dry-run` and `--yes`; existing noninteractive commands remain noninteractive.
+Non-skill selections are retained for M3, as in the project core APIs; installing
+non-skill sources still refuses until their installers exist.
+
+Run `cargo test -p skm-cli --release --test v1 list_1000_skills_cold -- --ignored --nocapture`
+for the 1,000-skill list gate. It creates and indexes real skill trees, then times
+five fresh CLI processes, including launch, captured output and shutdown. The
+fixture includes 1,000 provenance entries as well as the skill trees. It
+does not exclude the first sample or warm up `skm`. Filesystem caches are not
+flushed. The strict 50 ms assertion remains enabled. On this macOS host the first
+launch after Cargo produces/restores the executable took 233.91 ms in the final
+run; directly rerunning the test binary measured 6.73 to 8.80 ms across five fresh
+processes. Temporary
+phase instrumentation located the slow sample outside the command's measured
+startup/list/shutdown work (under 8 ms), not in parsing the 1,000 skills.
+
 ## Install (T-024)
 
 `install::preview(paths, git, source)` returns a `Preview` that owns staged skill

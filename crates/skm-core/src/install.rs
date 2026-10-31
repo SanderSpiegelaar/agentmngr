@@ -92,6 +92,47 @@ pub enum InstallResult {
     },
 }
 
+pub struct InstallPlan {
+    pub plan: Plan,
+    pub items: Vec<InstalledSkill>,
+    _renamed: tempfile::TempDir,
+}
+
+impl InstallPlan {
+    pub fn apply(mut self, paths: &Paths, store: &Store) -> Result<InstallResult, Error> {
+        let scope_id = store.write(|connection| {
+            connection.execute("INSERT INTO scopes(kind,name,mode,added_at) SELECT 'global','Global','link',unixepoch() WHERE NOT EXISTS (SELECT 1 FROM scopes WHERE kind='global')", [])?;
+            Ok(connection.query_row("SELECT id FROM scopes WHERE kind='global' ORDER BY id LIMIT 1", [], |row| row.get(0))?)
+        })?;
+        let preview_scope = self.plan.scope_id;
+        self.plan.scope_id = scope_id;
+        for action in &mut self.plan.actions {
+            if let Some(owner) = &mut action.owner {
+                owner.scope_id = scope_id;
+            }
+            for required in &mut action.requires {
+                if let Some(owner) = &mut required.ledger
+                    && owner.scope_id == preview_scope
+                {
+                    owner.scope_id = scope_id;
+                }
+            }
+        }
+        let result = engine::apply(paths, store, &self.plan, "install", None)?;
+        if !result
+            .done
+            .iter()
+            .any(|action| action.target() == paths.library.join("library.toml"))
+        {
+            self.items.clear();
+        }
+        Ok(InstallResult::Applied {
+            items: self.items,
+            result,
+        })
+    }
+}
+
 /// Performs Git and filesystem work synchronously. Retain the preview until install completes.
 pub fn preview(paths: &Paths, git: &GitRunner, source: &Source) -> Result<Preview, Error> {
     fs::create_dir_all(&paths.cache)?;
@@ -394,6 +435,18 @@ pub fn install(
     preview: &Preview,
     selection: &[Selection],
 ) -> Result<InstallResult, Error> {
+    match plan_install(paths, store, preview, selection)? {
+        Ok(plan) => plan.apply(paths, store),
+        Err(collisions) => Ok(InstallResult::Collisions(collisions)),
+    }
+}
+
+pub fn plan_install(
+    paths: &Paths,
+    store: &Store,
+    preview: &Preview,
+    selection: &[Selection],
+) -> Result<Result<InstallPlan, Vec<NameCollision>>, Error> {
     if selection.is_empty() {
         return Err(Error::InvalidSkill("select at least one skill".into()));
     }
@@ -453,11 +506,14 @@ pub fn install(
         targets.push((choice, name, target, before));
     }
     if !collisions.is_empty() {
-        return Ok(InstallResult::Collisions(collisions));
+        return Ok(Err(collisions));
     }
-    let scope_id = store.write(|connection| {
-        connection.execute("INSERT INTO scopes(kind,name,mode,added_at) SELECT 'global','Global','link',unixepoch() WHERE NOT EXISTS (SELECT 1 FROM scopes WHERE kind='global')", [])?;
-        Ok(connection.query_row("SELECT id FROM scopes WHERE kind='global' ORDER BY id LIMIT 1", [], |row| row.get(0))?)
+    let scope_id = store.read(|connection| {
+        Ok(connection.query_row(
+            "SELECT COALESCE((SELECT id FROM scopes WHERE kind='global' ORDER BY id LIMIT 1),0)",
+            [],
+            |row| row.get(0),
+        )?)
     })?;
     let timestamp: String = store.read(|connection| {
         Ok(
@@ -554,11 +610,11 @@ pub fn install(
         }
         plan.actions.push(write);
     }
-    let result = engine::apply(paths, store, &plan, "install", None)?;
-    if !result.done.iter().any(|action| action.target() == manifest) {
-        items.clear();
-    }
-    Ok(InstallResult::Applied { items, result })
+    Ok(Ok(InstallPlan {
+        plan,
+        items,
+        _renamed: renamed,
+    }))
 }
 
 fn plan_copy(

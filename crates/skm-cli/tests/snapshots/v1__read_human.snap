@@ -1,0 +1,39 @@
+---
+source: crates/skm-cli/tests/v1.rs
+expression: human
+---
+$ skm list
+KIND	NAME	DESCRIPTION
+skill	review	Review code
+
+$ skm list --kind skill --scope global
+KIND	NAME	DESCRIPTION
+
+$ skm show review
+skill review
+Review code
+{"active":[],"description":"Review code","kind":"skill","metadata":{"allowed-tools":null,"compatibility":null,"description":"Review code","license":null,"metadata":{},"name":"review"},"name":"review","path":"<ROOT>/manager/library/skills/review","problems":[],"source":null}
+
+$ skm status
+1 items, 1 projects, 0 pending
+[] enabled agents
+
+$ skm set list
+toolkit
+
+$ skm set show toolkit
+{"skills":["review"]}
+
+$ skm project list
+PATH	MODE	AUTO-SYNC
+<ROOT>/project	Copy	true
+
+$ skm doctor
+home: <ROOT>/manager
+library: <ROOT>/manager/library
+cache: <ROOT>/manager/cache
+trash: <ROOT>/manager/trash
+logs: <ROOT>/manager/logs
+config: <ROOT>/manager/config.toml
+db: <ROOT>/manager/state.db
+lock: <ROOT>/manager/lock

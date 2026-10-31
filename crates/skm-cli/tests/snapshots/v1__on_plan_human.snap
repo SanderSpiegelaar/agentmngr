@@ -1,0 +1,9 @@
+---
+source: crates/skm-cli/tests/v1.rs
+expression: plan
+---
+item: Skill review
+on: true
+scope: global
+1 actions, 0 issues
+Link { target: "<ROOT>/user/.agents/skills/review", to: "<ROOT>/manager/library/skills/review" }

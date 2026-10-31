@@ -1,0 +1,56 @@
+---
+source: crates/skm-cli/tests/v1.rs
+expression: plan
+---
+{
+  "changes": {
+    "install": [
+      "imported"
+    ],
+    "on": "global",
+    "set": "toolkit"
+  },
+  "ok": true,
+  "plans": [
+    {
+      "actions": [
+        {
+          "CopyTree": {
+            "computed_hash": "2eaa085731d1de203b2a9bb82ae8f26f85ef6cf8440eadad9c6f63f86a3ac3fe",
+            "from": "<ROOT>/manager/cache/<preview>/0",
+            "hash": "49f8b69ec027bf99bfe44c54b1812d3ac776444a3a66536b13c7575d7dc36f37",
+            "target": "<ROOT>/manager/cache/base/imported/2eaa085731d1de203b2a9bb82ae8f26f85ef6cf8440eadad9c6f63f86a3ac3fe"
+          }
+        },
+        {
+          "CopyTree": {
+            "computed_hash": "2eaa085731d1de203b2a9bb82ae8f26f85ef6cf8440eadad9c6f63f86a3ac3fe",
+            "from": "<ROOT>/manager/cache/<preview>/0",
+            "hash": "49f8b69ec027bf99bfe44c54b1812d3ac776444a3a66536b13c7575d7dc36f37",
+            "target": "<ROOT>/manager/library/skills/imported"
+          }
+        },
+        {
+          "WriteFile": {
+            "bytes": "schema = 1\n\n[global]\nskills = [\"imported\"]\n\n[sets.toolkit]\nskills = [\"imported\", \"review\"]\n\n[skills.imported]\nsource = { kind = \"local\", origin = \"<ROOT>/source/\" }\nbase_hash = \"2eaa085731d1de203b2a9bb82ae8f26f85ef6cf8440eadad9c6f63f86a3ac3fe\"\ninstalled_at = <TIMESTAMP>\n",
+            "target": "<ROOT>/manager/library/library.toml"
+          }
+        }
+      ],
+      "issues": [],
+      "summary": "Install skills"
+    },
+    {
+      "actions": [
+        {
+          "Link": {
+            "target": "<ROOT>/user/.agents/skills/imported",
+            "to": "<ROOT>/manager/library/skills/imported"
+          }
+        }
+      ],
+      "issues": [],
+      "summary": "1 actions, 0 issues"
+    }
+  ]
+}

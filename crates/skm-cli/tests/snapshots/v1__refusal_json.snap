@@ -1,0 +1,10 @@
+---
+source: crates/skm-cli/tests/v1.rs
+expression: "f.comparable(&output.stdout, true)"
+---
+{
+  "code": "E_FOREIGN_TARGET",
+  "fix": "Move the unmanaged target aside or explicitly adopt it.",
+  "message": "item is active; use --off to disable it before removal",
+  "ok": false
+}
