@@ -14,6 +14,10 @@ pub struct Paths {
 }
 
 impl Paths {
+    pub fn global_skills(user_home: &Path) -> io::Result<PathBuf> {
+        Ok(std::fs::canonicalize(user_home)?.join(".agents/skills"))
+    }
+
     /// Resolve once using explicit inputs so callers and tests need no environment mutation.
     pub fn resolve(
         cli_home: Option<&Path>,
