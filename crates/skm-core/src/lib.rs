@@ -10,7 +10,9 @@ pub mod indexer;
 pub mod library;
 pub mod logging;
 pub mod paths;
+pub mod projects;
 pub mod registry;
+pub mod sets;
 pub mod store;
 pub mod target;
 
