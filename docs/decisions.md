@@ -1,6 +1,147 @@
 # Decisions
 
-## T-003 GPUI matrix spike, iteration 2
+## T-003 GPUI matrix spike, iteration 3
+
+**Date:** 2026-10-31. **Final decision: NO-GO against the unchanged gate:**
+120 fps scrolling on this Mac's 120 Hz display and filter response ≤16 ms/keystroke.
+No acceptance tolerance or CPU-only substitute has been introduced.
+
+**Recommended investigation config:** DataTable, exact **gpui-kit 0.8.1** /
+gpui-component 0.8.1, **gpui-fast 0.1.12**, thin-LTO `spike` profile,
+precomputed SharedString cells, **CAMetalLayer.maximumDrawableCount=2**.
+This is an experimental configuration, not approval of the production matrix.
+Double buffering remains worth investigating for scroll cadence, but does not
+establish repeatable 120 fps or improve the measured filter presentation tail.
+The core GPUI uniform_list grid remains the unapproved fallback from iteration 2.
+
+### 1. Double-buffer repeatability
+
+Five **valid, serial, unprofiled** repeats of the iteration-2 executable built from
+`e972771761e62a894e31428b88c37760682b8bfa`, before adding scene/GPU instrumentation.
+Same M5 Pro, internal 120 Hz display, foreground **1400×900 at (80,80)**, five-second
+warm-up, twelve-second scroll at **2,880 logical pixels/second**, 5,000×12 cells.
+The Metal probe and aggregate interval-count/elapsed-time FPS method are unchanged.
+A hitch remains a presentation interval **>12.5 ms**, not an 8 ms approximation.
+
+| Trial / raw suffix | Avg Metal fps | Hitches | Presentation intervals |
+|---|---:|---:|---:|
+| double-1 | 119.334403 | 8 | 1432 |
+| double-2 | 119.917772 | 1 | 1439 |
+| double-3 | 119.834517 | 2 | 1438 |
+| double-9 | 119.250428 | 9 | 1430 |
+| double-10 | 119.250964 | 9 | 1431 |
+
+**Zero-hitch 120 fps reproduced in 0/5 valid runs.** Pooled: **119.517654 fps**,
+**29/7170 hitches**, **59.991138 s** of within-run presentation intervals;
+worst interval **16.666651 ms**. All **7170/7170 scroll callbacks were active**,
+with no zero-presented-time drawables during scrolling. This does not prove
+120 fps impossible, but the single clean iteration-2 run was not repeatable here.
+
+There were ten repeat attempts, not five silently selected successes. Trials
+4/5 failed geometry (1400×932; 900×900 at (900,39)), 6/7 lost focus, and 8 ended on
+an external monitor. Trials 9/10 explicitly moved only the new process's window
+to the built-in monitor/workspace **before** native sizing and warm-up; the measured
+geometry/workload stayed the same. No focus or geometry correction runs during
+measurement. Final CoreGraphics bounds, active counts, setup and exclusion reasons
+for **all 17 attempts**, including later tagged trials, are in
+[`spike/t003-i3-runs.csv`](spike/t003-i3-runs.csv). Bounds were checked at the end,
+not continuously; brief geometry changes inside an otherwise valid run are unproven.
+
+### 2. Residual hitch correlation
+
+Every one of the **29** missed-refresh intervals was joined to its drawable
+acquisition and the preceding last-child CPU paint marker. Paint-to-acquire gaps
+were **0.048–1.785 ms**, keeping the matching within the same scroll frame.
+Those frames' callback-start-to-paint durations were **1.224 ms median,
+2.326 ms p95, 2.526 ms maximum**: none exceeded one 8.333 ms refresh period.
+Their drawable acquisition waits were **9.112 ms median, 13.479 ms p95,
+15.367 ms maximum**; **21/29** blocked in `nextDrawable` for more than one period.
+
+**The majority's root cause remains unattributed.** Drawable-availability waiting
+is the measured common symptom, not proof of which scheduler/GPU/compositor event
+caused it. Rows enter view during scrolling, but this CPU timeline does not split
+element creation, text shaping or allocation. It excludes post-marker renderer work
+and the later element-arena cleanup, so it cannot exonerate or blame those phases.
+No per-hitch process/scheduler trace exists. Unrelated Rust compilation and Defender
+load were observed between attempts, not correlated to individual hitches; they
+are not claimed as the cause. Our own builds did not overlap benchmark runs.
+
+`xcrun xctrace version` still fails **exit 72**, “unable to find utility xctrace”.
+No profiler was installed. The existing CPU timeline was used instead, with
+per-hitch joins emitted by `python3 docs/spike/t003-iter3-summarize.py`.
+
+### 3. Filter result presentation, not just rows-ready
+
+Separate, explicitly instrumented trials tag the **last-child paint of each
+filtered scene** with its generation and row count. The next drawable copies that
+tag; `presentedTime` identifies its presentation. A `presentDrawable:` observer
+also records submission and the command buffer's **GPUStartTime/GPUEndTime**.
+The pinned source orders draw/paint → acquire drawable → render command buffer →
+present → arena cleanup. All **110** expected row counts and generation matches
+pass; the iteration-2 first-acquired-after-handler match picks the **same drawable
+in 110/110 cases**, so this experiment finds no frame-identification error.
+
+Two valid triple-buffer trials (**44 queries**) and three double-buffer trials
+(**66 queries**) are compared. Two additional triple-buffer attempts lost focus
+and are excluded. Every retained scroll callback and every observed drawable from
+scroll start through the filter phase was active. The actual layer counts were
+**3 and 2**, verified per result drawable. Values below are **p50 / p95 / max ms**.
+
+| Handler/result-path measurement | Triple buffer | Double buffer |
+|---|---:|---:|
+| Rows ready | 0.079 / 0.249 / 0.278 | 0.065 / 0.200 / 0.253 |
+| Last-child CPU paint | 2.156 / 4.954 / 6.084 | 1.957 / 4.641 / 5.308 |
+| GPU execution only | 1.582 / 1.604 / 2.310 | 1.583 / 1.832 / 2.874 |
+| GPU completion → presentation | 23.517 / 24.833 / 32.270 | 23.669 / 25.085 / 28.617 |
+| Handler → first tagged result presentation | 28.008 / 28.749 / 36.360 | 28.025 / 28.877 / 36.303 |
+
+Filter drawable acquisition p95 was only **0.073 / 0.054 ms**, and
+submission-to-GPU-start p95 **0.856 / 0.619 ms**. Thus the roughly 28–36 ms response
+is not 35 ms of filtering or GPU execution. Most delay is **after GPU completion**,
+in the presentation path: median **2.82 / 2.84 nominal 120 Hz periods** there,
+and **3.36 / 3.36 periods** from handler entry to the result. The historical
+**35.650 ms p95** is not remeasured as the new p95; roughly 36 ms tails persist.
+The exact cause of each historical outlier remains unproven.
+
+Counting actual intervening presentations refutes a simple explanation of “2–3
+older app frames queued ahead”: **42/44 triple-buffer edits and 61/66 double-buffer
+edits had zero older frames presented between handler and result**. Remaining
+counts were **2 once / 4 once** for triple, and **1 three times / 2 once / 3 once**
+for double. Those older frames had already been acquired before the handler.
+The result was usually the very next presented app frame, just delayed roughly
+three display periods. Metal/compositor scheduling, adaptive scan-out and driver
+buffer reuse are not separated by these measurements. We can locate the delay
+after GPU completion, not identify its internal WindowServer/display policy.
+**Double buffering does not lower the measured presentation p95** (28.749 →
+28.877 ms); this is a serial comparison under uncontrolled external load, not a
+claim that the 0.129 ms difference is statistically meaningful.
+
+**Gate comparison:** handler entry → first presented drawable containing the
+filtered result, **36.303 ms maximum (28.877 ms p95)** for the recommended
+double-buffer config. **66/66 edits exceeded 16 ms** (minimum **19.669 ms**);
+triple buffering also failed **44/44**. “≤16 ms/keystroke” needs the result visible,
+not merely a ready vector or a CPU paint marker. This is already a failing
+lower-bound scope: input editing/hardware delivery and optical scan-out are
+excluded. Even a p95 interpretation would fail; no gate relaxation is necessary.
+
+**Still unproven:** repeatable zero-hitch 120 fps; the root cause of the residual
+hitches and post-GPU presentation delay; hardware-keystroke-to-photon response;
+controlled-load/thermal results; production-sized real content and accessibility.
+Neither “GPUI cannot do 120” nor “production-ready 120 fps” follows.
+
+Raw iteration-3 CSVs total approximately **1.21 MB** under `docs/spike/`. Rejected
+attempts retain compact validation metadata rather than bulk traces. Tagged
+presentation CSVs retain the filter phase and older drawables presented after
+its first handler; repeat CSVs retain full timelines. Reproduction and probe
+scope are in [`spike/README.md`](spike/README.md). No new dependencies were added.
+
+**Validation:** spike-fast optimized build, default-backend
+`cargo check --workspace --all-targets --locked`, `cargo fmt --all -- --check`,
+Clang `-Wall -Wextra` syntax check, all five repeat summaries/29 hitch joins/110
+tagged filters, unchanged historical iteration-2 summary, and `git diff --check`
+pass. Upstream `block 0.1.6` still emits Cargo's future-incompatibility warning.
+
+## T-003 GPUI matrix spike, iteration 2 (historical)
 
 **Date:** 2026-10-31. **Decision: NO-GO for accepting the unchanged gate.**
 
@@ -205,3 +346,5 @@ tracing, not another callback-only FPS estimate.
   interrupted/defocused attempts are explicitly marked invalid.
 - **UNAVAILABLE:** Instruments/xctrace and samply; built-in sample was used instead.
 - **WARNING:** upstream `block 0.1.6` emits Cargo's future-incompatibility warning.
+
+Raw CSVs, scripts and spike code: branch `t003-iter3` (1d98f7d), kept off the main line.
