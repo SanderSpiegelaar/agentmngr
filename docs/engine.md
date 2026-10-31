@@ -68,7 +68,8 @@ apply fails; saving desired state and applying are not one transaction.
 `global_skills::plan_global_skill` takes the same arguments and returns the same
 reconciliation plan without saving or applying. On first run its scope id is 0,
 for preview only; `set_global_skill` creates the real global scope. Both reconcile
-the selected global skills plus the requested off target, not unrelated entries.
+only the toggled skill's target, never other selected skills or their conflicts.
+An on request refused by a foreign target still persists its desired state.
 Only absent paths and `OurLink` entries are eligible, even if a real copy has a
 ledger row. Missing on-skill directories and unsafe names return `E_INVALID_SKILL`.
 

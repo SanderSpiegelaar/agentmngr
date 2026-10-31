@@ -1,5 +1,5 @@
 //! Global desired skills and their universal links. Agent-specific paths are never used.
-use std::{collections::BTreeSet, path::Path};
+use std::path::Path;
 
 use rusqlite::OptionalExtension;
 
@@ -81,39 +81,27 @@ fn prepare(
     if on {
         library.global.skills.push(name.to_owned());
     }
-    let names: BTreeSet<_> = library
-        .global
-        .skills
-        .iter()
-        .map(String::as_str)
-        .chain([name])
-        .collect();
     let directory = Paths::global_skills(user_home)?;
-    let mut desired = Vec::new();
-    for name in names {
-        validate_name(name)?;
-        let enabled = library.global.skills.iter().any(|skill| skill == name);
-        let source = paths.library.join("skills").join(name);
-        if enabled && !source.is_dir() {
-            return Err(Error::InvalidSkill(format!(
-                "skill {name:?} is not in the library"
-            )));
-        }
-        desired.push(DesiredTarget {
-            target: directory.join(name),
-            item: ItemRef {
-                kind: ItemKind::Skill,
-                name: name.into(),
-            },
-            agent_id: None,
-            content: if enabled {
-                DesiredContent::Link { to: source }
-            } else {
-                DesiredContent::Absent
-            },
-            approve_modified: false,
-        });
+    let source = paths.library.join("skills").join(name);
+    if on && !source.is_dir() {
+        return Err(Error::InvalidSkill(format!(
+            "skill {name:?} is not in the library"
+        )));
     }
+    let mut desired = vec![DesiredTarget {
+        target: directory.join(name),
+        item: ItemRef {
+            kind: ItemKind::Skill,
+            name: name.into(),
+        },
+        agent_id: None,
+        content: if on {
+            DesiredContent::Link { to: source }
+        } else {
+            DesiredContent::Absent
+        },
+        approve_modified: false,
+    }];
     let targets: Vec<_> = desired.iter().map(|target| target.target.clone()).collect();
     let observed = engine::observe(paths, store, &targets)?;
     // Even ledger-owned real copies must not be removed by a global link toggle.
