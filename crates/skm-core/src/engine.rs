@@ -10,6 +10,7 @@ mod filesystem;
 mod undo;
 
 pub use apply::{apply, observe};
+pub(crate) use filesystem::copy as copy_tree;
 pub(crate) use filesystem::link_hash;
 pub use filesystem::snapshot;
 pub use undo::{Operation, list_ops, undo};

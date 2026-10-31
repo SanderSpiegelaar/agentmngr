@@ -105,7 +105,7 @@ pub(super) fn parents_safe(target: &Path) -> io::Result<bool> {
     Ok(target.file_name().is_some())
 }
 
-pub(super) fn copy(source: &Path, target: &Path) -> io::Result<()> {
+pub(crate) fn copy(source: &Path, target: &Path) -> io::Result<()> {
     let meta = fs::symlink_metadata(source)?;
     if meta.is_symlink() {
         symlink(&fs::read_link(source)?, target)?;
