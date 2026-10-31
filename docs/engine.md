@@ -252,7 +252,29 @@ from the old/new set are reconciled, using each project's effective post-edit
 selection, mode, and the existing engine's ownership checks. Removed members get
 explicit absent targets unless another set or direct selection retains them.
 `projects::plan_skills` exposes the same planner for an explicit skill-name scope.
-Neither function saves definitions, applies, writes lock files, or edits git
-excludes. Copy-mode lock integration, link-mode excludes, and auto-apply scheduling
-belong to T-027, T-029, and T-028 respectively. Non-skill selections are retained
-for M3 renderers but produce no filesystem actions in M1.
+Neither function saves definitions or applies. `plan_skills` is the low-level
+tree/link planner without lock or exclude writes. `plan_set_change` includes
+copy-mode lock merging. Non-skill selections are retained for M3 renderers but
+produce no filesystem actions in M1.
+
+## Project copies and locks (T-027)
+
+`projects::plan_project(&paths, &store, &project, &library, &registry)` reconciles
+effective skills and previously owned skill targets, including removals.
+`apply_project` takes the same arguments plus `actor` and optional events, and
+calls engine apply once. Callers choose whether to run paused projects.
+`plan_copy_project` takes an explicit selection and skill-name scope for set edits.
+The copy-mode path is separate from link planning and never changes Git's index.
+
+Copy plans write real trees with exact ledger fingerprints and verified npx
+computed hashes. The v1 lock uses sorted skill keys, provenance sources and
+relative local paths (falling back to the library tree when provenance is absent).
+Local restore requires that source to exist on the restoring machine.
+Foreign lock entry objects retain their exact JSON bytes through `RawValue`;
+same-name foreign entries refuse rather than being claimed. Lock ownership is
+derived from the skill target ledger, not from ownership of the whole lock file.
+Unsupported or malformed locks refuse without writes. Edited copies refuse the
+copy plan. Lock writes are snapshot-bound merges, permitted on existing regular
+files, and depend on successful skill effects. Concurrent lock edits are refused
+by apply. As with the engine, a failed action can leave partial tree changes;
+dependent lock writes do not publish a claim for failed copies.

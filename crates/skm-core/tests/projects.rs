@@ -55,6 +55,229 @@ fn skill(paths: &Paths, name: &str) {
 }
 
 #[test]
+fn copy_apply_preserves_foreign_lock_bytes_and_only_changes_expected_git_paths() {
+    let (temp, paths, store, registry) = fixture();
+    let repo = project_directory(&temp, "repo");
+    let git = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&repo)
+        .status()
+        .is_ok_and(|status| status.success());
+    let foreign = "{  \"sourceType\" : \"github\",\n\t\"source\":\"other/repo\", \"computedHash\" : \"foreign\", \"unknown\" : [ 1,  2 ] }";
+    fs::write(
+        repo.join("skills-lock.json"),
+        format!("{{\"version\":1,\"skills\":{{\"foreign\":{foreign}}}}}\n"),
+    )
+    .unwrap();
+    let project = projects::register(&store, &repo).unwrap();
+    skill(&paths, "alpha");
+    fs::create_dir_all(paths.library.join("skills/alpha/nested")).unwrap();
+    fs::write(paths.library.join("skills/alpha/nested/data"), "payload").unwrap();
+    projects::set_direct_item(
+        &store,
+        &registry,
+        project.id,
+        &item(ItemKind::Skill, "alpha"),
+        None,
+    )
+    .unwrap();
+    let library = Library::default();
+    let preview = projects::plan_project(&paths, &store, &project, &library, &registry).unwrap();
+    assert!(!repo.join(".agents").exists());
+    assert!(preview.issues.is_empty(), "{:?}", preview.issues);
+    let result =
+        projects::apply_project(&paths, &store, &project, &library, &registry, "test", None)
+            .unwrap();
+    assert!(result.failed.is_empty(), "{:?}", result.failed);
+    assert!(result.issues.is_empty(), "{:?}", result.issues);
+    let copy = repo.join(".agents/skills/alpha");
+    assert!(
+        !fs::symlink_metadata(&copy)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(
+        fs::read_to_string(copy.join("nested/data")).unwrap(),
+        "payload"
+    );
+    let text = fs::read_to_string(repo.join("skills-lock.json")).unwrap();
+    assert!(text.contains(foreign));
+    assert!(text.find("\"alpha\"").unwrap() < text.find("\"foreign\"").unwrap());
+    let lock: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(lock["version"], 1);
+    assert_eq!(
+        lock["skills"]["alpha"]["computedHash"],
+        skm_core::content_hash::content_hash(&copy).unwrap()
+    );
+    assert_eq!(lock["skills"]["alpha"]["sourceType"], "local");
+    let source = lock["skills"]["alpha"]["source"].as_str().unwrap();
+    assert!(!std::path::Path::new(source).is_absolute());
+    assert_eq!(
+        repo.join(source).canonicalize().unwrap(),
+        paths.library.join("skills/alpha")
+    );
+    let owner = engine::observe(&paths, &store, std::slice::from_ref(&copy))
+        .unwrap()
+        .remove(0);
+    assert_eq!(owner.ledger.as_ref().unwrap().how, "copy");
+    assert_eq!(
+        Some(&owner.ledger.unwrap().written_hash),
+        owner.state.hash.as_ref()
+    );
+    assert!(
+        projects::plan_project(&paths, &store, &project, &library, &registry)
+            .unwrap()
+            .actions
+            .is_empty()
+    );
+    if git {
+        let output = std::process::Command::new("git")
+            .args(["status", "--porcelain", "--untracked-files=all"])
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            "?? .agents/skills/alpha/SKILL.md\n?? .agents/skills/alpha/nested/data\n?? skills-lock.json\n"
+        );
+        let staged = std::process::Command::new("git")
+            .args(["diff", "--cached", "--name-only"])
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+        assert!(staged.stdout.is_empty());
+    }
+    fs::write(paths.library.join("skills/alpha/SKILL.md"), "updated").unwrap();
+    let updated =
+        projects::apply_project(&paths, &store, &project, &library, &registry, "test", None)
+            .unwrap();
+    assert!(updated.failed.is_empty() && updated.issues.is_empty());
+    assert_eq!(
+        fs::read_to_string(copy.join("SKILL.md")).unwrap(),
+        "updated"
+    );
+    assert!(
+        fs::read_to_string(repo.join("skills-lock.json"))
+            .unwrap()
+            .contains(foreign)
+    );
+    projects::remove_direct_item(&store, project.id, &item(ItemKind::Skill, "alpha")).unwrap();
+    let removed =
+        projects::apply_project(&paths, &store, &project, &library, &registry, "test", None)
+            .unwrap();
+    assert!(removed.failed.is_empty(), "{:?}", removed.failed);
+    assert!(!copy.exists());
+    let text = fs::read_to_string(repo.join("skills-lock.json")).unwrap();
+    assert!(text.contains(foreign));
+    assert!(!text.contains("\"alpha\""));
+}
+
+#[test]
+fn copy_lock_refuses_foreign_name_and_stale_lock_and_preserves_edited_copy() {
+    let (temp, paths, store, registry) = fixture();
+    let repo = project_directory(&temp, "repo");
+    let project = projects::register(&store, &repo).unwrap();
+    skill(&paths, "alpha");
+    projects::set_direct_item(
+        &store,
+        &registry,
+        project.id,
+        &item(ItemKind::Skill, "alpha"),
+        None,
+    )
+    .unwrap();
+    let library = Library::default();
+    let lock = repo.join("skills-lock.json");
+    fs::write(&lock, r#"{"version":1,"skills":{"alpha":{"source":"foreign","sourceType":"git","computedHash":"x"}}}"#).unwrap();
+    let refused = projects::plan_project(&paths, &store, &project, &library, &registry).unwrap();
+    assert!(refused.actions.is_empty());
+    assert_eq!(refused.issues[0].code, "E_FOREIGN_TARGET");
+    fs::write(&lock, "{\"version\":1,\"skills\":{}}").unwrap();
+    let plan = projects::plan_project(&paths, &store, &project, &library, &registry).unwrap();
+    fs::write(&lock, "{\"version\":1,\"skills\":{},\"extra\":true}").unwrap();
+    let result = engine::apply(&paths, &store, &plan, "test", None).unwrap();
+    assert!(!result.issues.is_empty());
+    assert!(fs::read_to_string(&lock).unwrap().contains("extra"));
+    let result =
+        projects::apply_project(&paths, &store, &project, &library, &registry, "test", None)
+            .unwrap();
+    assert!(result.failed.is_empty(), "{:?}", result.failed);
+    let copy = repo.join(".agents/skills/alpha/SKILL.md");
+    fs::write(&copy, "teammate edit").unwrap();
+    fs::write(
+        paths.library.join("skills/alpha/SKILL.md"),
+        "library update",
+    )
+    .unwrap();
+    let refused = projects::plan_project(&paths, &store, &project, &library, &registry).unwrap();
+    assert!(refused.actions.is_empty());
+    assert_eq!(refused.issues[0].code, "E_PROJECT_EDITED");
+    assert_eq!(fs::read_to_string(copy).unwrap(), "teammate edit");
+}
+
+#[test]
+fn copy_lock_retains_remote_provenance_and_does_not_publish_after_failed_copy() {
+    let (temp, paths, store, registry) = fixture();
+    let repo = project_directory(&temp, "repo");
+    let project = projects::register(&store, &repo).unwrap();
+    skill(&paths, "alpha");
+    projects::set_direct_item(
+        &store,
+        &registry,
+        project.id,
+        &item(ItemKind::Skill, "alpha"),
+        None,
+    )
+    .unwrap();
+    let mut library = Library::default();
+    library.skills.insert(
+        "alpha".into(),
+        skm_core::library::SkillProvenance {
+            source: skm_core::library::SkillSource::Git {
+                url: "https://example.test/team/skills.git".into(),
+                reference: Some("stable".into()),
+                path: Some("skills/alpha".into()),
+            },
+            rev: None,
+            base_hash: None,
+            installed_at: None,
+        },
+    );
+    let plan = projects::plan_project(&paths, &store, &project, &library, &registry).unwrap();
+    fs::write(
+        paths.library.join("skills/alpha/SKILL.md"),
+        "changed after preview",
+    )
+    .unwrap();
+    let refused = engine::apply(&paths, &store, &plan, "test", None).unwrap();
+    assert!(!refused.issues.is_empty());
+    assert!(!repo.join("skills-lock.json").exists());
+    let result =
+        projects::apply_project(&paths, &store, &project, &library, &registry, "test", None)
+            .unwrap();
+    assert!(result.failed.is_empty() && result.issues.is_empty());
+    let lock: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(repo.join("skills-lock.json")).unwrap()).unwrap();
+    let entry = &lock["skills"]["alpha"];
+    assert_eq!(entry["source"], "https://example.test/team/skills.git");
+    assert_eq!(entry["sourceType"], "git");
+    assert_eq!(entry["ref"], "stable");
+    assert_eq!(entry["skillPath"], "skills/alpha/SKILL.md");
+    for invalid in ["", "{", r#"{"version":2,"skills":{}}"#, r#"{"version":1}"#] {
+        fs::write(repo.join("skills-lock.json"), invalid).unwrap();
+        let error =
+            projects::plan_project(&paths, &store, &project, &library, &registry).unwrap_err();
+        assert_eq!(error.code(), "E_CONFIG_PARSE");
+        assert_eq!(
+            fs::read_to_string(repo.join("skills-lock.json")).unwrap(),
+            invalid
+        );
+    }
+}
+
+#[test]
 fn registration_and_selection_persist_without_a_repository_footprint() {
     let (temp, paths, store, registry) = fixture();
     let repo = project_directory(&temp, "repo");
@@ -277,13 +500,13 @@ fn set_edits_plan_exactly_using_projects_without_touching_unrelated_targets() {
         .find(|p| p.project.id == first.id)
         .unwrap()
         .plan;
-    assert_eq!(first_plan.actions.len(), 1);
+    assert_eq!(first_plan.actions.len(), 2);
     assert!(
         matches!(&first_plan.actions[0].action, Action::CopyTree { target, .. } if target.ends_with("skills/new"))
     );
     let second_plan = plans.iter().find(|p| p.project.id == second.id).unwrap();
     assert!(!second_plan.project.auto_sync);
-    assert_eq!(second_plan.plan.actions.len(), 2);
+    assert_eq!(second_plan.plan.actions.len(), 3);
     assert!(
         second_plan
             .plan
@@ -314,7 +537,7 @@ fn set_edits_plan_exactly_using_projects_without_touching_unrelated_targets() {
             .plan
             .actions
             .len(),
-        1
+        2
     );
 }
 
