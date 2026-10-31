@@ -408,6 +408,7 @@ fn local_preview_rejects_source_containing_its_own_staging_directory() {
     assert_eq!(error.code(), "E_INVALID_SKILL");
 }
 
+#[cfg(unix)]
 #[test]
 fn commit_sha_reference_previews_that_commit_not_the_branch_tip() {
     let root = tempfile::tempdir().unwrap();
