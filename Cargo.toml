@@ -8,6 +8,8 @@ edition = "2024"
 rust-version = "1.99.1"
 
 [workspace.dependencies]
+notify = "8"
+notify-debouncer-full = "0.6"
 fd-lock = "4"
 proptest = "1"
 rusqlite = { version = "0.38", features = ["bundled"] }

@@ -18,4 +18,6 @@ pub mod source;
 pub mod sets;
 pub mod store;
 pub mod target;
+pub mod watcher;
+
 pub use error::Error;

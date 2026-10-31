@@ -8,6 +8,8 @@ rust-version.workspace = true
 live-tests = []
 
 [dependencies]
+notify.workspace = true
+notify-debouncer-full.workspace = true
 fd-lock.workspace = true
 rusqlite.workspace = true
 serde_yaml_ng.workspace = true
