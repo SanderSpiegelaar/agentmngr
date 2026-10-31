@@ -186,6 +186,33 @@ pub fn apply(
     apply_checked(paths, store, plan, actor, events, false)
 }
 
+pub(super) fn preflight_undo(paths: &Paths, store: &Store, plan: &Plan) -> Result<(), Error> {
+    let mut checked = std::collections::BTreeSet::new();
+    for planned in &plan.actions {
+        let target = planned.action.target();
+        // Repeated targets are checked against the final state, not intermediate inverses.
+        if checked.insert(target) {
+            let current = observe(paths, store, &[target.to_path_buf()])?.remove(0);
+            if current != planned.before {
+                return Err(Error::ConfigChanged(format!(
+                    "undo target or ownership changed: {}",
+                    target.display()
+                )));
+            }
+        }
+        validate(paths, planned, plan.scope_id)?;
+        if let Action::Restore { from, hash, .. } = &planned.action
+            && filesystem::snapshot(from, paths)?.hash.as_ref() != Some(hash)
+        {
+            return Err(Error::ConfigChanged(format!(
+                "undo backup changed: {}",
+                from.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn apply_checked(
     paths: &Paths,
     store: &Store,
@@ -209,30 +236,7 @@ pub(super) fn apply_checked(
         }
     })?;
     if undo {
-        let mut checked = std::collections::BTreeSet::new();
-        for planned in &plan.actions {
-            let target = planned.action.target();
-            // Repeated targets are checked against their final state, not an
-            // intermediate state which an earlier inverse will restore.
-            if checked.insert(target) {
-                let current = observe(paths, store, &[target.to_path_buf()])?.remove(0);
-                if current != planned.before {
-                    return Err(Error::ConfigChanged(format!(
-                        "undo target or ownership changed: {}",
-                        target.display()
-                    )));
-                }
-            }
-            validate(paths, planned, plan.scope_id)?;
-            if let Action::Restore { from, hash, .. } = &planned.action
-                && filesystem::snapshot(from, paths)?.hash.as_ref() != Some(hash)
-            {
-                return Err(Error::ConfigChanged(format!(
-                    "undo backup changed: {}",
-                    from.display()
-                )));
-            }
-        }
+        preflight_undo(paths, store, plan)?;
     }
     store.read(|connection| {
         connection.query_row("SELECT id FROM scopes WHERE id=?1", [plan.scope_id], |_| {

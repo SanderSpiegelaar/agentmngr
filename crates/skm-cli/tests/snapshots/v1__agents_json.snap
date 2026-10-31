@@ -1,0 +1,42 @@
+---
+source: crates/skm-cli/tests/v1.rs
+expression: "f.comparable(&output.stdout, true)"
+---
+[
+  {
+    "detected": false,
+    "enabled": false,
+    "id": "claude-code",
+    "name": "Claude Code"
+  },
+  {
+    "detected": false,
+    "enabled": false,
+    "id": "codex",
+    "name": "Codex"
+  },
+  {
+    "detected": false,
+    "enabled": false,
+    "id": "copilot-cli",
+    "name": "GitHub Copilot CLI"
+  },
+  {
+    "detected": false,
+    "enabled": false,
+    "id": "cursor",
+    "name": "Cursor"
+  },
+  {
+    "detected": false,
+    "enabled": false,
+    "id": "gemini-cli",
+    "name": "Gemini CLI"
+  },
+  {
+    "detected": false,
+    "enabled": false,
+    "id": "opencode",
+    "name": "OpenCode"
+  }
+]

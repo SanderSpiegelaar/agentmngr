@@ -8,7 +8,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, value::RawValue};
 
-use super::{Project, ProjectMode, effective_project, plan_skills};
+use super::{Project, ProjectMode, effective_project, plan_skills_from};
 use crate::{
     Error,
     content_hash::content_hash,
@@ -86,12 +86,33 @@ pub fn plan_copy_project(
     selection: &ItemSelection,
     names: &BTreeSet<String>,
 ) -> Result<Plan, Error> {
+    plan_copy_from(
+        paths,
+        store,
+        project,
+        library,
+        selection,
+        names,
+        &BTreeMap::new(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn plan_copy_from(
+    paths: &Paths,
+    store: &Store,
+    project: &Project,
+    library: &Library,
+    selection: &ItemSelection,
+    names: &BTreeSet<String>,
+    sources: &BTreeMap<String, std::path::PathBuf>,
+) -> Result<Plan, Error> {
     if project.mode != ProjectMode::Copy {
         return Err(Error::ConfigChanged(
             "copy planning requires copy mode".into(),
         ));
     }
-    let mut plan = plan_skills(paths, store, project, selection, names)?;
+    let mut plan = plan_skills_from(paths, store, project, selection, names, sources)?;
     if !plan.issues.is_empty() {
         plan.actions.clear();
         plan.summary = format!("0 actions, {} issues", plan.issues.len());
@@ -151,15 +172,22 @@ pub fn plan_copy_project(
         let mut expected =
             engine::observe(paths, store, std::slice::from_ref(&skill_target))?.remove(0);
         if selection.skills.contains(name) {
-            let source = paths.library.join("skills").join(name);
-            let source_state = engine::snapshot(&source, paths)?;
-            let hash = content_hash(&source)?;
-            if engine::snapshot(&source, paths)? != source_state {
+            let library_source = paths.library.join("skills").join(name);
+            let source = sources.get(name).unwrap_or(&library_source);
+            let source_state = engine::snapshot(source, paths)?;
+            let hash = content_hash(source)?;
+            if engine::snapshot(source, paths)? != source_state {
                 return Err(Error::ConfigChanged("skill changed while hashing".into()));
             }
             lock.skills.insert(
                 name.clone(),
-                to_raw(&lock_entry(library, name, &source, &project.path, &hash)?)?,
+                to_raw(&lock_entry(
+                    library,
+                    name,
+                    &library_source,
+                    &project.path,
+                    &hash,
+                )?)?,
             );
             if let Some(action) = plan
                 .actions

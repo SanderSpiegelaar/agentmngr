@@ -31,6 +31,26 @@ pub struct Registration {
 }
 
 pub fn register_with_report(store: &Store, path: &Path) -> Result<Registration, Error> {
+    let (mut registration, mut plan) = plan_registration(store, path)?;
+    registration.project = register_scope(store, path)?;
+    plan.scope_id = registration.project.id;
+    for action in &mut plan.actions {
+        if let Some(owner) = &mut action.owner {
+            owner.scope_id = plan.scope_id;
+        }
+    }
+    if !plan.actions.is_empty() {
+        let applied = engine::apply(&store.paths, store, &plan, "reattach", None)?;
+        if !applied.issues.is_empty() || !applied.failed.is_empty() {
+            return Err(Error::ConfigChanged(
+                "project content changed while reattaching".into(),
+            ));
+        }
+    }
+    Ok(registration)
+}
+
+pub fn plan_registration(store: &Store, path: &Path) -> Result<(Registration, Plan), Error> {
     let root = path.canonicalize()?;
     let locked = locks::read(&root, true)?;
     let registry = Registry::load()?;
@@ -40,7 +60,25 @@ pub fn register_with_report(store: &Store, path: &Path) -> Result<Registration, 
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Library::default(),
         Err(error) => return Err(error.into()),
     };
-    let project = register_scope(store, &root)?;
+    let project = super::list(store)?
+        .into_iter()
+        .find(|p| p.path == root)
+        .unwrap_or(Project {
+            id: 0,
+            path: root.clone(),
+            name: root
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+            mode: ProjectMode::Copy,
+            auto_sync: true,
+        });
+    let mut plan = Plan {
+        scope_id: project.id,
+        summary: "Reattach project".into(),
+        ..Plan::default()
+    };
     let mut report = ReattachResult {
         suggested_sets: library
             .sets
@@ -58,26 +96,28 @@ pub fn register_with_report(store: &Store, path: &Path) -> Result<Registration, 
         ..ReattachResult::default()
     };
     if project.mode != ProjectMode::Copy {
-        return Ok(Registration {
-            project,
-            reattachment: report,
-        });
+        return Ok((
+            Registration {
+                project,
+                reattachment: report,
+            },
+            plan,
+        ));
     }
     let entries = match fs::read_dir(root.join(".agents/skills")) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(Registration {
-                project,
-                reattachment: report,
-            });
+            return Ok((
+                Registration {
+                    project,
+                    reattachment: report,
+                },
+                plan,
+            ));
         }
         Err(error) => return Err(error.into()),
     };
     let paths = &store.paths;
-    let mut plan = Plan {
-        scope_id: project.id,
-        ..Plan::default()
-    };
     for entry in entries {
         let entry = entry?;
         let name = entry
@@ -128,16 +168,11 @@ pub fn register_with_report(store: &Store, path: &Path) -> Result<Registration, 
         };
         report.skills.insert(name, state);
     }
-    if !plan.actions.is_empty() {
-        let applied = engine::apply(paths, store, &plan, "reattach", None)?;
-        if !applied.issues.is_empty() || !applied.failed.is_empty() {
-            return Err(Error::ConfigChanged(
-                "project content changed while reattaching".into(),
-            ));
-        }
-    }
-    Ok(Registration {
-        project,
-        reattachment: report,
-    })
+    Ok((
+        Registration {
+            project,
+            reattachment: report,
+        },
+        plan,
+    ))
 }

@@ -86,17 +86,21 @@ fn load_rows(connection: &Connection) -> Result<Vec<IndexRow>, Error> {
 
 /// None discovers all items; Some limits work to existing item IDs from watcher events.
 pub fn catch_up(store: &Store, paths: &Paths, ids: Option<&[i64]>) -> Result<Counts, Error> {
-    reindex(store, paths, ids, false, None)
+    reindex(store, paths, ids, false, None, true)
 }
 
 /// Re-parses only items beneath library-relative prefixes, including new and deleted items.
 pub fn catch_up_paths(store: &Store, paths: &Paths, prefixes: &[PathBuf]) -> Result<Counts, Error> {
-    reindex(store, paths, None, true, Some(prefixes))
+    reindex(store, paths, None, true, Some(prefixes), true)
 }
 
 /// Re-parses every item, preserving IDs, lazy hashes and indexed_at for identical rows.
 pub fn full_reindex(store: &Store, paths: &Paths) -> Result<Counts, Error> {
-    reindex(store, paths, None, true, None)
+    reindex(store, paths, None, true, None, true)
+}
+
+pub fn preview_reindex(store: &Store, paths: &Paths) -> Result<Counts, Error> {
+    reindex(store, paths, None, true, None, false)
 }
 
 fn reindex(
@@ -105,6 +109,7 @@ fn reindex(
     ids: Option<&[i64]>,
     force: bool,
     prefixes: Option<&[PathBuf]>,
+    persist: bool,
 ) -> Result<Counts, Error> {
     let library_path = paths.library.clone();
     let ids = ids.map(|ids| ids.iter().copied().collect::<BTreeSet<_>>());
@@ -191,7 +196,7 @@ fn reindex(
             }
         }
         counts.total = transaction.query_row("SELECT count(*) FROM items", [], |row| row.get::<_, i64>(0))? as usize;
-        transaction.commit()?;
+        if persist { transaction.commit()?; }
         Ok(counts)
     })
 }

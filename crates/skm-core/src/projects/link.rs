@@ -1,6 +1,11 @@
-use std::{collections::BTreeSet, fs, path::PathBuf, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::PathBuf,
+    time::Duration,
+};
 
-use super::{Project, ProjectMode, copy, plan_skills};
+use super::{Project, ProjectMode, copy, plan_skills_from};
 use crate::{
     Error,
     engine::{self, Action, Observation, Ownership, Plan, PlannedAction, TargetState},
@@ -21,6 +26,17 @@ pub fn plan_link_project(
     selection: &ItemSelection,
     names: &BTreeSet<String>,
 ) -> Result<Plan, Error> {
+    plan_link_from(paths, store, project, selection, names, &BTreeMap::new())
+}
+
+pub(super) fn plan_link_from(
+    paths: &Paths,
+    store: &Store,
+    project: &Project,
+    selection: &ItemSelection,
+    names: &BTreeSet<String>,
+    sources: &BTreeMap<String, PathBuf>,
+) -> Result<Plan, Error> {
     if project.mode != ProjectMode::Link {
         return Err(Error::ConfigChanged(
             "link planning requires link mode".into(),
@@ -31,7 +47,7 @@ pub fn plan_link_project(
             "link-mode skill names cannot contain line breaks".into(),
         ));
     }
-    let mut plan = plan_skills(paths, store, project, selection, names)?;
+    let mut plan = plan_skills_from(paths, store, project, selection, names, sources)?;
     if !plan.issues.is_empty() {
         plan.actions.clear();
         plan.summary = format!("0 actions, {} issues", plan.issues.len());

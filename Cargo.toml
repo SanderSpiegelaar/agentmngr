@@ -8,6 +8,7 @@ edition = "2024"
 rust-version = "1.99.1"
 
 [workspace.dependencies]
+insta = { version = "1", features = ["json"] }
 notify = "8"
 notify-debouncer-full = "0.6"
 fd-lock = "4"

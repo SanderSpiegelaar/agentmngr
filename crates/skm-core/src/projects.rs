@@ -1,6 +1,6 @@
 //! Machine-local projects and effective selections. Planning never writes to a project.
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
 };
 
@@ -23,7 +23,9 @@ pub mod sync;
 pub use copy::{apply_project, plan_copy_project, plan_project};
 pub use link::plan_link_project;
 mod reattach;
-pub use reattach::{ProjectSkillState, ReattachResult, Registration, register_with_report};
+pub use reattach::{
+    ProjectSkillState, ReattachResult, Registration, plan_registration, register_with_report,
+};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -391,11 +393,26 @@ pub fn plan_skills(
     selection: &ItemSelection,
     names: &BTreeSet<String>,
 ) -> Result<Plan, Error> {
+    plan_skills_from(paths, store, project, selection, names, &BTreeMap::new())
+}
+
+pub(super) fn plan_skills_from(
+    paths: &Paths,
+    store: &Store,
+    project: &Project,
+    selection: &ItemSelection,
+    names: &BTreeSet<String>,
+    sources: &BTreeMap<String, PathBuf>,
+) -> Result<Plan, Error> {
     require_project(store, project.id)?;
     let mut desired = Vec::new();
     for name in names {
         crate::global_skills::validate_name(name)?;
-        let source = paths.library.join("skills").join(name);
+        let library_source = paths.library.join("skills").join(name);
+        let source = sources
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| library_source.clone());
         let content = if !selection.skills.contains(name) {
             DesiredContent::Absent
         } else {
@@ -411,7 +428,7 @@ pub fn plan_skills(
                     })?,
                     from: source,
                 },
-                ProjectMode::Link => DesiredContent::Link { to: source },
+                ProjectMode::Link => DesiredContent::Link { to: library_source },
             }
         };
         desired.push(DesiredTarget {
@@ -428,6 +445,26 @@ pub fn plan_skills(
     let targets: Vec<_> = desired.iter().map(|target| target.target.clone()).collect();
     let observed = engine::observe(paths, store, &targets)?;
     Ok(engine::plan(project.id, &desired, &observed))
+}
+
+pub fn plan_staged_project(
+    paths: &Paths,
+    store: &Store,
+    project: &Project,
+    library: &Library,
+    selection: &ItemSelection,
+    sources: &BTreeMap<String, PathBuf>,
+) -> Result<Plan, Error> {
+    let mut names: BTreeSet<_> = selection.skills.iter().cloned().collect();
+    names.extend(copy::owned_skills(store, project)?);
+    match project.mode {
+        ProjectMode::Copy => {
+            copy::plan_copy_from(paths, store, project, library, selection, &names, sources)
+        }
+        ProjectMode::Link => {
+            link::plan_link_from(paths, store, project, selection, &names, sources)
+        }
+    }
 }
 
 fn enabled_agents(store: &Store) -> Result<Vec<String>, Error> {
