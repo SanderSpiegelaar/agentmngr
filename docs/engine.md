@@ -278,8 +278,8 @@ explicit absent targets unless another set or direct selection retains them.
 `projects::plan_skills` exposes the same planner for an explicit skill-name scope.
 Neither function saves definitions or applies. `plan_skills` is the low-level
 tree/link planner without lock or exclude writes. `plan_set_change` includes
-copy-mode lock merging. Non-skill selections are retained for M3 renderers but
-produce no filesystem actions in M1.
+mode-specific lock and exclude updates. Non-skill selections are retained for M3
+renderers but produce no filesystem actions in M1.
 
 ## Project copies and locks (T-027)
 
@@ -302,3 +302,19 @@ copy plan. Lock writes are snapshot-bound merges, permitted on existing regular
 files, and depend on successful skill effects. Concurrent lock edits are refused
 by apply. As with the engine, a failed action can leave partial tree changes;
 dependent lock writes do not publish a claim for failed copies.
+
+## Project links (T-029)
+
+`plan_project` dispatches by `ProjectMode`. `plan_link_project` takes an explicit
+selection and skill-name scope, like `plan_copy_project`. Link plans create
+library symlinks and merge a `skillsmgr managed paths` block into Git's
+worktree-aware `info/exclude`. Only created skill paths enter the block. Other
+lines retain their bytes, and an empty block disappears. Patterns escape Git
+wildcards. Skill names containing line breaks refuse with `E_INVALID_SKILL`.
+
+Mode switches use ordinary previewable engine actions. Link mode removes owned
+lock entries, preserving foreign entry bytes and unknown top-level fields. An
+empty manager-owned lock disappears. Copy mode recreates the lock and removes
+the exclude block. Metadata actions require successful skill changes and refuse
+stale file snapshots. Edited copies refuse the whole plan. No mode changes Git's
+index, so switching previously tracked copies still shows working-tree changes.

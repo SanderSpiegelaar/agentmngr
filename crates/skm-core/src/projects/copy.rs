@@ -22,11 +22,11 @@ use crate::{
 };
 
 #[derive(Serialize, Deserialize)]
-struct Lock {
-    version: u32,
-    skills: BTreeMap<String, Box<RawValue>>,
+pub(super) struct Lock {
+    pub(super) version: u32,
+    pub(super) skills: BTreeMap<String, Box<RawValue>>,
     #[serde(flatten)]
-    other: BTreeMap<String, serde_json::Value>,
+    pub(super) other: BTreeMap<String, serde_json::Value>,
 }
 
 pub fn plan_project(
@@ -41,7 +41,7 @@ pub fn plan_project(
     names.extend(owned_skills(store, project)?);
     match project.mode {
         ProjectMode::Copy => plan_copy_project(paths, store, project, library, &selection, &names),
-        ProjectMode::Link => plan_skills(paths, store, project, &selection, &names),
+        ProjectMode::Link => super::plan_link_project(paths, store, project, &selection, &names),
     }
 }
 
@@ -63,7 +63,7 @@ pub fn apply_project(
     )
 }
 
-fn owned_skills(store: &Store, project: &Project) -> Result<BTreeSet<String>, Error> {
+pub(super) fn owned_skills(store: &Store, project: &Project) -> Result<BTreeSet<String>, Error> {
     store.read(|connection| {
         let mut statement = connection.prepare("SELECT item_name,target FROM ledger WHERE scope_id=?1 AND item_kind='skill' AND how IN ('copy','link') AND entry_key=''")?;
         let rows = statement.query_map([project.id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
@@ -236,6 +236,7 @@ pub fn plan_copy_project(
         }
         plan.actions.push(action);
     }
+    super::link::clear_exclude(paths, store, project, &mut plan)?;
     plan.summary = format!(
         "{} actions, {} issues",
         plan.actions.len(),

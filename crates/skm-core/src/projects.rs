@@ -18,7 +18,9 @@ use crate::{
 };
 
 mod copy;
+mod link;
 pub use copy::{apply_project, plan_copy_project, plan_project};
+pub use link::plan_link_project;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -367,7 +369,7 @@ pub fn plan_set_change(
             let plan = if project.mode == ProjectMode::Copy {
                 plan_copy_project(paths, store, &project, after, &selection, &names)?
             } else {
-                plan_skills(paths, store, &project, &selection, &names)?
+                plan_link_project(paths, store, &project, &selection, &names)?
             };
             Ok(ProjectPlan { project, plan })
         })
