@@ -1,6 +1,12 @@
-[package]
-name = "agentmngr"
+[workspace]
+members = ["crates/skm-core", "crates/skm-cli", "crates/skm-app"]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.96.1"
 
-[dependencies]
+[workspace.dependencies]
+clap = { version = "4", features = ["derive"] }
+gpui-kit = { version = "=0.8.1", default-features = false }
