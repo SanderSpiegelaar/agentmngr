@@ -4955,11 +4955,18 @@ name = "skm-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "skm-core",
+ "tempfile",
 ]
 
 [[package]]
 name = "skm-core"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "tempfile",
+ "toml 1.1.8+spec-1.1.0",
+]
 
 [[package]]
 name = "skrifa"
