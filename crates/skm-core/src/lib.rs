@@ -5,6 +5,7 @@ pub mod error;
 pub mod events;
 pub mod foreign_skills;
 pub mod frontmatter;
+pub mod git;
 pub mod global_skills;
 pub mod indexer;
 pub mod library;

@@ -61,7 +61,9 @@ impl Error {
             }
             Self::ConfigChanged(_) => "Reload the config and create a new plan before applying.",
             Self::GitAuth(_) => "Check your Git credentials and repository access.",
-            Self::GitMissing(_) => "Install Git and make it available on PATH.",
+            Self::GitMissing(_) => {
+                "Install Git >=2.30 with Xcode Command Line Tools (`xcode-select --install`) and make it available on PATH."
+            }
             Self::Network(_) => "Check your connection and retry.",
             Self::Locked(_) => "Wait for the other apply operation to finish and retry.",
             Self::InvalidSkill(_) => "Fix the skill metadata or contents and retry.",
