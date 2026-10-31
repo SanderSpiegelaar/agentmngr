@@ -28,6 +28,14 @@ library content, `E_CONFIG_CHANGED` for stale observations or failed hash checks
 `E_INVALID_SKILL` for non-directory or broken skill sources, and `E_CONFIG_PARSE`
 for invalid or unsupported npx locks. No new error variants are introduced.
 
+`skm doctor` reports each check with `status` (`ok`, `warn`, `fail`), `message`,
+and `fix` in JSON and human output. It exits 1 for a failed prerequisite, 3 for
+warnings only, and 0 when all checks pass. `--bundle <path>` uses `/usr/bin/zip`
+to replace the archive with logs and redacted TOML config, including registry
+overrides. If config cannot be parsed, its contents and log bodies are omitted
+rather than risk exposing secrets. The M3/M5 secrets-scan slot remains inactive
+and is not reported as a passing scan.
+
 ## Logging
 
 Call `logging::init_logging(&home.join("logs"))` once at application startup and

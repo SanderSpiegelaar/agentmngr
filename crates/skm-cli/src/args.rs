@@ -130,6 +130,8 @@ pub enum Command {
     },
     Doctor {
         #[arg(long)]
+        bundle: Option<PathBuf>,
+        #[arg(long)]
         reindex: bool,
     },
 }

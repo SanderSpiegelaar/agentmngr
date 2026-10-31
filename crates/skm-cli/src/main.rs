@@ -1,5 +1,6 @@
 mod args;
 mod commands;
+mod doctor;
 mod output;
 mod project;
 mod sets;
@@ -41,12 +42,23 @@ fn run(cli: Cli) -> Result<i32, Error> {
     let env_home = std::env::var_os("SKILLSMGR_HOME").map(PathBuf::from);
     let home = std::env::home_dir().ok_or_else(|| std::io::Error::other("HOME is unavailable"))?;
     let mut paths = Paths::resolve(cli.home.as_deref(), env_home.as_deref(), Some(&home))?;
+    let registry = Registry::load()?;
+    if let Some(args::Command::Doctor {
+        reindex,
+        ref bundle,
+    }) = cli.command
+    {
+        return commands::doctor(
+            &cli,
+            &mut paths,
+            &registry,
+            &home,
+            reindex,
+            bundle.as_deref(),
+        );
+    }
     paths.ensure_layout()?;
     let _logging = skm_core::logging::init_logging(&paths.logs)?;
-    let registry = Registry::load()?;
-    if let Some(args::Command::Doctor { reindex }) = cli.command {
-        return commands::doctor(&cli, &paths, &registry, reindex);
-    }
     let store = Store::open(&paths)?;
     let context = Context {
         cli,

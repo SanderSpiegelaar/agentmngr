@@ -819,17 +819,32 @@ fn remove(c: &Context, text: &str, off: bool) -> Result<i32, Error> {
 
 pub fn doctor(
     cli: &crate::args::Cli,
-    paths: &skm_core::paths::Paths,
+    paths: &mut skm_core::paths::Paths,
     registry: &skm_core::registry::Registry,
+    home: &std::path::Path,
     reindex: bool,
+    bundle: Option<&std::path::Path>,
 ) -> Result<i32, Error> {
+    let checks = crate::doctor::checks(paths, registry, home);
+    let ready = checks
+        .iter()
+        .any(|check| check.id == "data-dir" && check.status == crate::doctor::Status::Ok);
+    let _logging = if ready {
+        Some(skm_core::logging::init_logging(&paths.logs)?)
+    } else {
+        None
+    };
     let known: Vec<_> = registry.agents.keys().map(String::as_str).collect();
-    match Library::load(&paths.library.join("library.toml"), &known) {
+    match if ready {
+        Library::load(&paths.library.join("library.toml"), &known)
+    } else {
+        Ok(Library::default())
+    } {
         Ok(_) => {}
         Err(Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(e),
     }
-    let counts = if reindex {
+    let counts = if reindex && ready {
         let store = skm_core::store::Store::open(paths)?;
         let n = if cli.dry_run {
             skm_core::indexer::preview_reindex(&store, paths)?
@@ -853,6 +868,13 @@ pub fn doctor(
         ("lock", &paths.lock_file),
     ];
     let mut value = serde_json::Map::new();
+    let code = crate::doctor::exit_code(&checks);
+    value.insert("ok".into(), json!(code == 0));
+    value.insert("checks".into(), json!(checks));
+    if let Some(bundle) = bundle {
+        crate::doctor::bundle::write(paths, bundle)?;
+        value.insert("bundle".into(), json!(bundle));
+    }
     for (name, path) in entries {
         value.insert(name.into(), json!(path));
     }
@@ -871,6 +893,18 @@ pub fn doctor(
         for (name, path) in entries {
             println!("{name}: {}", path.display());
         }
+        for check in checks {
+            println!(
+                "{} {}: {}\n  fix: {}",
+                check.status.as_str(),
+                check.id,
+                check.message,
+                check.fix
+            );
+        }
+        if let Some(bundle) = bundle {
+            println!("bundle: {}", bundle.display());
+        }
     }
-    Ok(0)
+    Ok(code)
 }
