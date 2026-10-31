@@ -58,3 +58,40 @@ fn doctor_prints_resolved_paths_and_accepts_global_home_after_subcommand() {
         "doctor twice: library/cache/trash/logs and one log file created; existing contents preserved; no DB opened"
     );
 }
+
+#[test]
+fn doctor_reindex_rebuilds_identical_rows() {
+    use skm_core::{indexer, paths::Paths, store::Store};
+    let root = tempfile::tempdir().unwrap();
+    let paths = Paths::resolve(Some(root.path()), None, None).unwrap();
+    let skill = paths.library.join("skills/test");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        "---\nname: test\ndescription: Test\n---\n",
+    )
+    .unwrap();
+    let run = || {
+        let output = Command::new(env!("CARGO_BIN_EXE_skm"))
+            .args([
+                "--home",
+                root.path().to_str().unwrap(),
+                "doctor",
+                "--reindex",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        String::from_utf8(output.stdout).unwrap()
+    };
+    assert!(run().contains("1 total, 1 inserted"));
+    let store = Store::open(&paths).unwrap();
+    let expected = indexer::load(&store).unwrap();
+    let output = run();
+    assert!(output.contains("1 total, 0 inserted, 0 updated, 0 removed, 1 unchanged"));
+    assert_eq!(indexer::load(&store).unwrap(), expected);
+    println!(
+        "doctor --reindex twice: every IndexRow column identical; {}",
+        output.lines().next().unwrap()
+    );
+}

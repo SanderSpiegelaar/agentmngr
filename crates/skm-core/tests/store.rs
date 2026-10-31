@@ -13,7 +13,7 @@ fn migrations_from_zero_are_idempotent_and_match_spec() -> Result<(), Error> {
     store.read(|connection| {
         assert_eq!(
             connection.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))?,
-            1
+            2
         );
         assert_eq!(
             connection.pragma_query_value(None, "journal_mode", |row| row.get::<_, String>(0))?,
@@ -58,7 +58,7 @@ fn migrations_from_zero_are_idempotent_and_match_spec() -> Result<(), Error> {
         Ok(())
     })?;
     println!(
-        "schema v1: nine tables, copy/auto_sync defaults, multi-kind items, lock/exclude, WAL, foreign keys; reopen preserves rows"
+        "schema v2: nine tables, copy/auto_sync defaults, multi-kind items, lock/exclude, WAL, foreign keys; reopen preserves rows"
     );
     Ok(())
 }
@@ -140,7 +140,7 @@ fn deleted_database_is_recreated_on_next_open() -> Result<(), Error> {
     store.read(|connection| {
         assert_eq!(
             connection.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))?,
-            1
+            2
         );
         assert_eq!(
             connection.query_row("SELECT count(*) FROM items", [], |row| row.get::<_, i64>(0))?,
@@ -148,6 +148,25 @@ fn deleted_database_is_recreated_on_next_open() -> Result<(), Error> {
         );
         Ok(())
     })?;
-    println!("deleted state.db recreated with schema v1 on next open");
+    println!("deleted state.db recreated with schema v2 on next open");
+    Ok(())
+}
+
+#[test]
+fn schema_v1_upgrades_without_losing_existing_items() -> Result<(), Error> {
+    let root = tempfile::tempdir()?;
+    let paths = Paths::resolve(Some(root.path()), None, None)?;
+    let connection = rusqlite::Connection::open(&paths.db_file)?;
+    connection.execute_batch(include_str!("../migrations/001_initial.sql"))?;
+    connection.pragma_update(None, "user_version", 1)?;
+    connection.execute("INSERT INTO items (kind,name,rel_path,stamp_mtime,stamp_size,indexed_at) VALUES ('skill','test','skills/test',123,42,456)", [])?;
+    drop(connection);
+    let store = Store::open(&paths)?;
+    let rows = skm_core::indexer::load(&store)?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].name, "test");
+    assert_eq!(rows[0].stamp.mtime_ns, 123);
+    assert_eq!(rows[0].indexed_at, 456);
+    assert_eq!(rows[0].file_stamp, None);
     Ok(())
 }

@@ -15,7 +15,10 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Print resolved paths.
-    Doctor,
+    Doctor {
+        #[arg(long)]
+        reindex: bool,
+    },
     /// List registered agents and their detection and management status.
     Agents,
 }
@@ -53,7 +56,15 @@ fn main() -> Result<(), skm_core::Error> {
                 );
             }
         }
-        Some(Command::Doctor) => {
+        Some(Command::Doctor { reindex }) => {
+            if reindex {
+                let store = skm_core::store::Store::open(&paths)?;
+                let counts = skm_core::indexer::full_reindex(&store, &paths)?;
+                println!(
+                    "reindex: {} total, {} inserted, {} updated, {} removed, {} unchanged",
+                    counts.total, counts.inserted, counts.updated, counts.removed, counts.unchanged
+                );
+            }
             for (name, path) in [
                 ("home", &paths.home),
                 ("library", &paths.library),
