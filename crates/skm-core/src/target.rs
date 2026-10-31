@@ -170,7 +170,7 @@ mod tests {
 
     fn fixture() -> (TempDir, Paths) {
         let temp = tempfile::tempdir().unwrap();
-        let paths = Paths::resolve(Some(&temp.path().join("home")), None, None).unwrap();
+        let mut paths = Paths::resolve(Some(&temp.path().join("home")), None, None).unwrap();
         paths.ensure_layout().unwrap();
         (temp, paths)
     }
@@ -336,6 +336,16 @@ mod tests {
         paths.library = alias;
         let link = temp.path().join("link");
         symlink("intermediate", &link).unwrap();
+        assert_eq!(classify(&link, &paths).unwrap(), skill());
+    }
+
+    #[test]
+    fn canonical_library_recognizes_links_written_through_a_manager_alias() {
+        let (temp, paths) = fixture();
+        let alias = temp.path().join("manager-alias");
+        symlink(&paths.home, &alias).unwrap();
+        let link = temp.path().join("link");
+        symlink(alias.join("library/skills/review"), &link).unwrap();
         assert_eq!(classify(&link, &paths).unwrap(), skill());
     }
 

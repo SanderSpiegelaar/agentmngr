@@ -50,10 +50,18 @@ impl Paths {
     }
 
     /// Create directories only; file contents belong to their owning modules.
-    pub fn ensure_layout(&self) -> io::Result<()> {
+    pub fn ensure_layout(&mut self) -> io::Result<()> {
         for directory in [&self.library, &self.cache, &self.trash, &self.logs] {
             std::fs::create_dir_all(directory)?;
         }
+        self.home = std::fs::canonicalize(&self.home)?;
+        self.library = std::fs::canonicalize(&self.library)?;
+        self.cache = std::fs::canonicalize(&self.cache)?;
+        self.trash = std::fs::canonicalize(&self.trash)?;
+        self.logs = std::fs::canonicalize(&self.logs)?;
+        self.config_file = self.home.join("config.toml");
+        self.db_file = self.home.join("state.db");
+        self.lock_file = self.home.join("lock");
         Ok(())
     }
 }
@@ -91,9 +99,10 @@ mod tests {
     fn first_run_layout_is_idempotent_and_preserves_contents() {
         let root = tempfile::tempdir().unwrap();
         let home = root.path().join("nested/home");
-        let paths = Paths::resolve(Some(&home), None, None).unwrap();
+        let mut paths = Paths::resolve(Some(&home), None, None).unwrap();
         assert!(!home.exists());
         paths.ensure_layout().unwrap();
+        let home = home.canonicalize().unwrap();
         for directory in [&paths.library, &paths.cache, &paths.trash, &paths.logs] {
             assert!(directory.is_dir());
         }

@@ -213,6 +213,40 @@ fn refused_on_does_not_leak_into_unrelated_toggles() {
 }
 
 #[test]
+fn symlinked_manager_and_user_home_support_toggle_and_undo() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().canonicalize().unwrap();
+    let alias = root.join("alias");
+    symlink(&root, &alias).unwrap();
+    let mut paths = Paths::resolve(Some(&alias.join("manager")), None, None).unwrap();
+    paths.ensure_layout().unwrap();
+    assert_eq!(paths.home, root.join("manager"));
+    let store = Store::open(&paths).unwrap();
+    fs::create_dir(root.join("user")).unwrap();
+    let home = alias.join("user");
+    let source = paths.library.join("skills/review");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("SKILL.md"), "original bytes").unwrap();
+    for on in [true, false] {
+        let result = set_global_skill(&paths, &store, &home, "review", on).unwrap();
+        assert_eq!(result.done.len(), 1, "{:?}", result.issues);
+        assert!(result.failed.is_empty() && result.issues.is_empty());
+    }
+    let result = engine::undo(&paths, &store, None, "test", None).unwrap();
+    assert_eq!(result.done.len(), 1);
+    assert!(result.failed.is_empty() && result.issues.is_empty());
+    let target = home.join(".agents/skills/review");
+    assert!(matches!(
+        skm_core::target::classify(&target, &paths).unwrap(),
+        skm_core::target::TargetClass::OurLink(_)
+    ));
+    assert_eq!(
+        fs::read(target.join("SKILL.md")).unwrap(),
+        b"original bytes"
+    );
+}
+
+#[test]
 fn unsafe_names_and_missing_skills_are_rejected_and_symlinked_parents_refuse() {
     let (_temp, paths, store, home) = fixture();
     for name in [

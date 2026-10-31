@@ -5,6 +5,12 @@ whole-path ledger rows. `engine::plan(scope_id, &desired, &observations)` is pur
 only explicitly supplied targets are reconciled. Request `DesiredContent::Absent`
 to turn an item off; omitting it does nothing. The scope must already exist in
 SQLite. Paths must be absolute, without `..` or symlink ancestors.
+Call `Paths::ensure_layout(&mut self)` after resolving the manager home. It creates
+the layout and canonicalizes its directories once, before plans or store use.
+Restore containment compares canonical backup and trash paths. Link classification
+resolves both the link destination and library, including missing item roots.
+The injected user home is canonicalized before constructing global targets;
+symlinked `.agents` descendants remain refused.
 
 `engine::apply(&paths, &store, &plan, actor, events)` returns completed actions,
 refusal issues, failures, and inverse guarded actions in reverse execution order.

@@ -139,7 +139,11 @@ fn validate(paths: &Paths, planned: &PlannedAction, scope_id: i64) -> Result<(),
         }
     }
     if let Action::Restore { from, .. } = &planned.action
-        && (!from.starts_with(&paths.trash) || !filesystem::parents_safe(from)?)
+        // A backup can itself be a symlink; contain its entry, not its destination.
+        && (!fs::canonicalize(from.parent().ok_or_else(|| Error::ForeignTarget("restore source has no parent".into()))?)?
+            .join(from.file_name().ok_or_else(|| Error::ForeignTarget("restore source has no name".into()))?)
+            .starts_with(fs::canonicalize(&paths.trash)?)
+            || !filesystem::parents_safe(from)?)
     {
         return Err(Error::ForeignTarget(
             "restore source is outside trash".into(),
