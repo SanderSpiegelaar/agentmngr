@@ -95,3 +95,35 @@ fn doctor_reindex_rebuilds_identical_rows() {
         output.lines().next().unwrap()
     );
 }
+
+#[test]
+fn doctor_validates_library_agent_ids_against_registry() {
+    let root = tempfile::tempdir().unwrap();
+    let library = root.path().join("library");
+    std::fs::create_dir_all(&library).unwrap();
+    let manifest = library.join("library.toml");
+    for reindex in [false, true] {
+        for (agent, success) in [("claude-code", true), ("*", true), ("not-an-agent", false)] {
+            std::fs::write(
+                &manifest,
+                format!("schema = 1\n[global]\nmcp = {{ test = ['{agent}'] }}\n"),
+            )
+            .unwrap();
+            let mut command = Command::new(env!("CARGO_BIN_EXE_skm"));
+            command.args(["--home", root.path().to_str().unwrap(), "doctor"]);
+            if reindex {
+                command.arg("--reindex");
+            }
+            let output = command.output().unwrap();
+            assert_eq!(output.status.success(), success, "{output:?}");
+            if !success {
+                let stderr = String::from_utf8(output.stderr).unwrap();
+                assert!(stderr.contains("unknown agent"), "{stderr}");
+                assert!(stderr.contains("not-an-agent"), "{stderr}");
+            }
+        }
+    }
+    println!(
+        "doctor library validation: registered IDs and wildcard accepted; unknown IDs rejected, with and without --reindex"
+    );
+}

@@ -1,4 +1,6 @@
+use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use skm_core::paths::Paths;
@@ -46,8 +48,29 @@ fn main() -> Result<(), skm_core::Error> {
                 &config,
             )?;
             let path = std::env::var_os("PATH").unwrap_or_default();
+            let store = skm_core::store::Store::open(&paths)?;
+            let enabled = store.read(|connection| {
+                let mut query = connection.prepare("SELECT id FROM agents WHERE enabled = 1")?;
+                Ok(query
+                    .query_map([], |row| row.get(0))?
+                    .collect::<Result<BTreeSet<String>, _>>()?)
+            })?;
             // Detection does not opt an agent into management.
-            let statuses = registry.detect(&path, &Default::default())?;
+            let statuses = registry.detect(&path, &enabled)?;
+            let statuses = store.write(move |connection| {
+                let transaction = connection.transaction()?;
+                let detected_at = SystemTime::now().duration_since(UNIX_EPOCH)
+                    .map_err(std::io::Error::other)?.as_secs() as i64;
+                for status in &statuses {
+                    transaction.execute(
+                        "INSERT INTO agents (id, detected, enabled, detected_at) VALUES (?1, ?2, 0, ?3)
+                         ON CONFLICT(id) DO UPDATE SET detected=excluded.detected, detected_at=excluded.detected_at",
+                        (&status.id, status.detected, detected_at),
+                    )?;
+                }
+                transaction.commit()?;
+                Ok(statuses)
+            })?;
             println!("{:<14} {:<20} {:<10} ENABLED", "ID", "AGENT", "DETECTED");
             for status in statuses {
                 println!(
@@ -57,6 +80,17 @@ fn main() -> Result<(), skm_core::Error> {
             }
         }
         Some(Command::Doctor { reindex }) => {
+            let registry = skm_core::registry::Registry::load()?;
+            let known_agents: Vec<_> = registry.agents.keys().map(String::as_str).collect();
+            match skm_core::library::Library::load(
+                &paths.library.join("library.toml"),
+                &known_agents,
+            ) {
+                Ok(_) => {}
+                Err(skm_core::Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+                }
+                Err(error) => return Err(error),
+            }
             if reindex {
                 let store = skm_core::store::Store::open(&paths)?;
                 let counts = skm_core::indexer::full_reindex(&store, &paths)?;
