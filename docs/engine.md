@@ -1,5 +1,36 @@
 # Engine API (T-017)
 
+## Watcher (T-021)
+
+`watcher::BatchIndexer::new(paths, Arc<Store>, targets, events)` captures target
+baselines. `Watcher::start(roots, indexer)` watches caller-supplied `WatchRoot::Tree`
+directories and `WatchRoot::File` paths. Pass the library, universal skills roots,
+registered projects' skills roots, lock/config files, and the manager's `.changed`.
+Files use parent-directory watches filtered by name; missing parents use the nearest
+existing ancestor recursively, so later directory creation needs no polling.
+Drop the watcher to stop and join its worker. Restart with new inputs when the
+registered projects or subscribed targets change. No project schema is required.
+
+`WatchedTarget` maps a path to an item ID. `entry: None` uses engine snapshots;
+`Some(vec!["mcpServers", "github"])` compares only that JSON/TOML entry. Unrelated
+entries do not emit changes. Library IDs are decimal SQLite IDs; supply those same
+IDs for targets that belong to library items. `BatchIndexer::process` accepts a
+native-event batch for deterministic replay and emits one `ItemsChanged` containing
+only changed IDs. `indexer::catch_up_paths` reparses library-relative prefixes,
+including new/deleted items. Directory/rescan events select only their subtree.
+
+Native notify events are grouped after 250 ms of quiet, using
+notify-debouncer-full's event records. Its stock debouncer is deliberately not
+started because its periodic tick wakes even when idle. The worker blocks on
+`recv()` when empty and uses `recv_timeout()` only with pending events; there is
+no polling backend, interval loop, or idle timer. The unit test
+`idle_worker_has_zero_timer_wakeups` counts worker wakeups before and after a
+batch. Native integration tests also cover a 400-file burst and parent filtering.
+Watcher/backend errors use `E_IO`; invalid subscribed config entries use
+`E_CONFIG_PARSE`. Background errors are sent as `CoreEvent::Error`.
+
+## Planning and applying
+
 `engine::observe(&paths, &store, &targets)` reads exact target fingerprints and
 whole-path ledger rows. `engine::plan(scope_id, &desired, &observations)` is pure:
 only explicitly supplied targets are reconciled. Request `DesiredContent::Absent`

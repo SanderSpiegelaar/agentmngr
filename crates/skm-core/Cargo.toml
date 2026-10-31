@@ -5,6 +5,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+notify.workspace = true
+notify-debouncer-full.workspace = true
 fd-lock.workspace = true
 rusqlite.workspace = true
 serde_yaml_ng.workspace = true

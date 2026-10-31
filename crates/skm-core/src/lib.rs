@@ -13,5 +13,6 @@ pub mod paths;
 pub mod registry;
 pub mod store;
 pub mod target;
+pub mod watcher;
 
 pub use error::Error;
