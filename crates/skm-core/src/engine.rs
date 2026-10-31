@@ -10,6 +10,7 @@ mod filesystem;
 mod undo;
 
 pub use apply::{apply, observe};
+pub(crate) use filesystem::link_hash;
 pub use filesystem::snapshot;
 pub use undo::{Operation, list_ops, undo};
 
@@ -27,6 +28,11 @@ pub enum Action {
         target: PathBuf,
         from: PathBuf,
         hash: String,
+        computed_hash: Option<String>,
+    },
+    /// Change only the ledger for an explicitly adopted, matching project copy.
+    Claim {
+        target: PathBuf,
     },
     Trash {
         target: PathBuf,
@@ -44,6 +50,7 @@ impl Action {
             Self::Link { target, .. }
             | Self::WriteFile { target, .. }
             | Self::CopyTree { target, .. }
+            | Self::Claim { target }
             | Self::Trash { target }
             | Self::Restore { target, .. } => target,
         }
@@ -98,6 +105,32 @@ pub struct PlannedAction {
     /// Ownership to install after success; None removes the ledger row.
     pub owner: Option<Ownership>,
     pub approve_modified: bool,
+    pub adoption: Option<AdoptionAuthorization>,
+    /// Checked under the apply lock before this action, including earlier effects.
+    pub requires: Vec<Observation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdoptionAuthorization {
+    observed: Observation,
+}
+
+impl PlannedAction {
+    /// Explicit adoption permission cannot follow a later edit to `before`.
+    pub fn authorize_adoption(&mut self) {
+        self.adoption = Some(AdoptionAuthorization {
+            observed: self.before.clone(),
+        });
+    }
+
+    pub(super) fn adoption_matches(&self) -> bool {
+        self.before.parents_safe
+            && self.before.state.hash.is_some()
+            && self
+                .adoption
+                .as_ref()
+                .is_some_and(|authorization| authorization.observed == self.before)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -241,6 +274,7 @@ pub fn plan(scope_id: i64, desired: &[DesiredTarget], current: &[Observation]) -
                         target: target.clone(),
                         from: from.clone(),
                         hash: hash.clone(),
+                        computed_hash: None,
                     },
                     "copy",
                 )
@@ -258,6 +292,8 @@ pub fn plan(scope_id: i64, desired: &[DesiredTarget], current: &[Observation]) -
             before: observed.clone(),
             owner,
             approve_modified: desired.approve_modified,
+            adoption: None,
+            requires: Vec::new(),
         });
     }
     plan.summary = format!(

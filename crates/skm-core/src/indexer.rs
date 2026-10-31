@@ -320,7 +320,9 @@ fn inspect_skill(path: &Path, root: &Path, problems: &mut Vec<String>) -> Result
         let path = entry.path();
         let metadata = fs::symlink_metadata(&path)?;
         if metadata.is_symlink() {
-            if fs::canonicalize(&path).is_ok_and(|target| !target.starts_with(root)) {
+            if fs::canonicalize(&path).is_ok_and(|target| {
+                fs::canonicalize(root).is_ok_and(|root| !target.starts_with(root))
+            }) {
                 problems.push(format!(
                     "Symlink points outside skill: {}",
                     path.strip_prefix(root).unwrap_or(&path).display()

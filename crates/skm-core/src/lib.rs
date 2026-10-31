@@ -3,6 +3,7 @@ pub mod content_hash;
 pub mod engine;
 pub mod error;
 pub mod events;
+pub mod foreign_skills;
 pub mod frontmatter;
 pub mod global_skills;
 pub mod indexer;

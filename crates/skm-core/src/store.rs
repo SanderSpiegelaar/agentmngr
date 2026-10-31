@@ -22,6 +22,7 @@ pub struct Store {
 impl Store {
     /// Creates the home layout and database, applying pending migrations atomically.
     pub fn open(paths: &Paths) -> Result<Self, Error> {
+        let mut paths = paths.clone();
         paths.ensure_layout()?;
         let mut connection = Connection::open(&paths.db_file)?;
         connection.pragma_update(None, "journal_mode", "WAL")?;

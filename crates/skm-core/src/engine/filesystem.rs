@@ -30,7 +30,7 @@ pub(super) fn file_hash(bytes: &[u8]) -> String {
     format!("{:x}", hash.finalize())
 }
 
-pub(super) fn link_hash(to: &Path) -> String {
+pub(crate) fn link_hash(to: &Path) -> String {
     let mut hash = Sha256::new();
     hash.update(b"link\0");
     hash.update(to.as_os_str().as_encoded_bytes());
@@ -125,6 +125,14 @@ pub(super) fn execute(
     expected: &TargetState,
 ) -> Result<(), Error> {
     let target = action.target();
+    if matches!(action, Action::Claim { .. }) {
+        if !parents_safe(target)? || snapshot(target, paths)? != *expected {
+            return Err(Error::ConfigChanged(
+                "project copy changed before claim".into(),
+            ));
+        }
+        return Ok(());
+    }
     let parent = target
         .parent()
         .ok_or_else(|| io::Error::other("target has no parent"))?;
@@ -185,8 +193,18 @@ pub(super) fn execute(
                     "copy source changed during staging".into(),
                 ));
             }
+            if let Action::CopyTree {
+                computed_hash: Some(hash),
+                ..
+            } = action
+                && crate::content_hash::content_hash(&staged)? != *hash
+            {
+                return Err(Error::ConfigChanged(
+                    "adopted content hash differs from original".into(),
+                ));
+            }
         }
-        Action::Trash { .. } => unreachable!(),
+        Action::Trash { .. } | Action::Claim { .. } => unreachable!(),
     }
     if !parents_safe(target)? || snapshot(target, paths)? != *expected {
         return Err(Error::ConfigChanged("target changed during staging".into()));

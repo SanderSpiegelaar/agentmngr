@@ -26,9 +26,9 @@ fn doctor_prints_resolved_paths_and_accepts_global_home_after_subcommand() {
             ("lock", "lock"),
         ] {
             let path = if suffix.is_empty() {
-                home.clone()
+                home.canonicalize().unwrap()
             } else {
-                home.join(suffix)
+                home.canonicalize().unwrap().join(suffix)
             };
             assert!(
                 stdout

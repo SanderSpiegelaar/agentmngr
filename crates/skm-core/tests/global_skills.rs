@@ -158,14 +158,14 @@ fn off_refuses_even_a_ledger_owned_real_file() {
 }
 
 #[test]
-fn preview_is_read_only_and_reconciles_other_selected_skills() {
+fn preview_is_read_only_and_scoped_to_the_toggled_skill() {
     let (_temp, paths, store, home) = fixture();
     fs::create_dir_all(paths.library.join("skills/other")).unwrap();
     let manifest = paths.library.join("library.toml");
     let text = "schema = 1\n[global]\nskills = ['other']\n";
     fs::write(&manifest, text).unwrap();
     let plan = plan_global_skill(&paths, &store, &home, "review", true).unwrap();
-    assert_eq!(plan.actions.len(), 2);
+    assert_eq!(plan.actions.len(), 1);
     assert_eq!(fs::read_to_string(&manifest).unwrap(), text);
     assert!(!home.join(".agents").exists());
     assert!(!paths.home.join(".changed").exists());
@@ -178,10 +178,71 @@ fn preview_is_read_only_and_reconciles_other_selected_skills() {
         })
         .unwrap();
     let result = set_global_skill(&paths, &store, &home, "review", true).unwrap();
-    assert_eq!(result.done.len(), 2);
+    assert_eq!(result.done.len(), 1);
+    assert!(!home.join(".agents/skills/other").exists());
     assert!(result.failed.is_empty() && result.issues.is_empty());
     println!(
-        "preview: two selected links planned; manifest, targets, scope table and activity untouched"
+        "preview: only toggled link planned; manifest, targets, scope table and activity untouched"
+    );
+}
+
+#[test]
+fn refused_on_does_not_leak_into_unrelated_toggles() {
+    let (_temp, paths, store, home) = fixture();
+    fs::create_dir_all(paths.library.join("skills/taken")).unwrap();
+    let taken = home.join(".agents/skills/taken");
+    fs::create_dir_all(&taken).unwrap();
+    fs::write(taken.join("SKILL.md"), "foreign bytes").unwrap();
+    let before = engine::snapshot(&taken, &paths).unwrap();
+    let refused = set_global_skill(&paths, &store, &home, "taken", true).unwrap();
+    assert_eq!(refused.issues[0].code, "E_FOREIGN_TARGET");
+    for on in [true, false] {
+        let plan = plan_global_skill(&paths, &store, &home, "review", on).unwrap();
+        assert!(plan.issues.is_empty(), "{:?}", plan.issues);
+        let result = set_global_skill(&paths, &store, &home, "review", on).unwrap();
+        assert!(result.issues.is_empty() && result.failed.is_empty());
+    }
+    assert_eq!(engine::snapshot(&taken, &paths).unwrap(), before);
+    assert_eq!(
+        Library::load(&paths.library.join("library.toml"), &[])
+            .unwrap()
+            .global
+            .skills,
+        ["taken"]
+    );
+}
+
+#[test]
+fn symlinked_manager_and_user_home_support_toggle_and_undo() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().canonicalize().unwrap();
+    let alias = root.join("alias");
+    symlink(&root, &alias).unwrap();
+    let mut paths = Paths::resolve(Some(&alias.join("manager")), None, None).unwrap();
+    paths.ensure_layout().unwrap();
+    assert_eq!(paths.home, root.join("manager"));
+    let store = Store::open(&paths).unwrap();
+    fs::create_dir(root.join("user")).unwrap();
+    let home = alias.join("user");
+    let source = paths.library.join("skills/review");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("SKILL.md"), "original bytes").unwrap();
+    for on in [true, false] {
+        let result = set_global_skill(&paths, &store, &home, "review", on).unwrap();
+        assert_eq!(result.done.len(), 1, "{:?}", result.issues);
+        assert!(result.failed.is_empty() && result.issues.is_empty());
+    }
+    let result = engine::undo(&paths, &store, None, "test", None).unwrap();
+    assert_eq!(result.done.len(), 1);
+    assert!(result.failed.is_empty() && result.issues.is_empty());
+    let target = home.join(".agents/skills/review");
+    assert!(matches!(
+        skm_core::target::classify(&target, &paths).unwrap(),
+        skm_core::target::TargetClass::OurLink(_)
+    ));
+    assert_eq!(
+        fs::read(target.join("SKILL.md")).unwrap(),
+        b"original bytes"
     );
 }
 
