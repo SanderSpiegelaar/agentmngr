@@ -3,6 +3,31 @@
 use std::{fs, process::Command};
 
 #[test]
+fn apply_database_failure_exits_one() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().canonicalize().unwrap();
+    let home = root.join("user");
+    fs::create_dir(&home).unwrap();
+    let paths = skm_core::paths::Paths::resolve(Some(&root.join("manager")), None, None).unwrap();
+    let store = skm_core::store::Store::open(&paths).unwrap();
+    fs::create_dir_all(paths.library.join("skills/review")).unwrap();
+    fs::write(paths.library.join("skills/review/SKILL.md"), "review\n").unwrap();
+    store.write(|connection| {
+        connection.execute_batch("CREATE TRIGGER fail_ledger BEFORE INSERT ON ledger BEGIN SELECT RAISE(FAIL, 'test database failure'); END;")?;
+        Ok(())
+    }).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_skm"))
+        .arg("--home")
+        .arg(&paths.home)
+        .args(["on", "review"])
+        .env("HOME", &home)
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&output.stdout).contains("1 failed"));
+    assert_eq!(output.status.code(), Some(1));
+}
+
+#[test]
 fn global_on_off_dry_run_and_foreign_exit_status() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().canonicalize().unwrap();

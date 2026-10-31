@@ -50,6 +50,29 @@ enum Command {
     },
 }
 
+fn finish_apply(issues: &[skm_core::engine::PlanIssue], failed: &[skm_core::engine::PlanIssue]) {
+    for (kind, problems) in [("issue", issues), ("failed", failed)] {
+        for problem in problems {
+            eprintln!(
+                "{kind}: {}: {}: {}",
+                problem.code,
+                problem.target.display(),
+                problem.message
+            );
+        }
+    }
+    let code = if !failed.is_empty() {
+        1
+    } else if !issues.is_empty() {
+        3
+    } else {
+        0
+    };
+    if code != 0 {
+        std::process::exit(code);
+    }
+}
+
 fn main() -> Result<(), skm_core::Error> {
     let cli = Cli::parse();
     let env_home = std::env::var_os("SKILLSMGR_HOME").map(PathBuf::from);
@@ -74,7 +97,7 @@ fn main() -> Result<(), skm_core::Error> {
         Some(Command::Adopt { names, project }) => {
             let home = user_home.ok_or_else(|| std::io::Error::other("HOME is unavailable"))?;
             let store = skm_core::store::Store::open(&paths)?;
-            let issues = if cli.dry_run {
+            let (issues, failed) = if cli.dry_run {
                 let plan = skm_core::foreign_skills::plan_adopt(
                     &paths,
                     &store,
@@ -86,7 +109,7 @@ fn main() -> Result<(), skm_core::Error> {
                 for action in &plan.actions {
                     println!("{:?}", action.action);
                 }
-                plan.issues
+                (plan.issues, Vec::new())
             } else {
                 let result = skm_core::foreign_skills::adopt(
                     &paths,
@@ -101,19 +124,9 @@ fn main() -> Result<(), skm_core::Error> {
                     result.issues.len(),
                     result.failed.len()
                 );
-                result.issues.into_iter().chain(result.failed).collect()
+                (result.issues, result.failed)
             };
-            for issue in &issues {
-                eprintln!(
-                    "{}: {}: {}",
-                    issue.code,
-                    issue.target.display(),
-                    issue.message
-                );
-            }
-            if !issues.is_empty() {
-                std::process::exit(3);
-            }
+            finish_apply(&issues, &failed);
         }
         Some(Command::Undo { op_id, list }) => {
             let store = skm_core::store::Store::open(&paths)?;
@@ -134,31 +147,21 @@ fn main() -> Result<(), skm_core::Error> {
                     }
                 };
                 println!("op {}: {} undone", result.op_id, result.done.len());
-                for issue in result.issues.iter().chain(&result.failed) {
-                    eprintln!(
-                        "{}: {}: {}",
-                        issue.code,
-                        issue.target.display(),
-                        issue.message
-                    );
-                }
-                if !result.issues.is_empty() || !result.failed.is_empty() {
-                    std::process::exit(3);
-                }
+                finish_apply(&result.issues, &result.failed);
             }
         }
         Some(Command::On { ref skill }) | Some(Command::Off { ref skill }) => {
             let on = matches!(cli.command, Some(Command::On { .. }));
             let home = user_home.ok_or_else(|| std::io::Error::other("HOME is unavailable"))?;
             let store = skm_core::store::Store::open(&paths)?;
-            let issues = if cli.dry_run {
+            let (issues, failed) = if cli.dry_run {
                 let plan =
                     skm_core::global_skills::plan_global_skill(&paths, &store, &home, skill, on)?;
                 println!("{}", plan.summary);
                 for action in &plan.actions {
                     println!("{:?}", action.action);
                 }
-                plan.issues
+                (plan.issues, Vec::new())
             } else {
                 let result =
                     skm_core::global_skills::set_global_skill(&paths, &store, &home, skill, on)?;
@@ -168,19 +171,9 @@ fn main() -> Result<(), skm_core::Error> {
                     result.issues.len(),
                     result.failed.len()
                 );
-                result.issues.into_iter().chain(result.failed).collect()
+                (result.issues, result.failed)
             };
-            for issue in &issues {
-                eprintln!(
-                    "{}: {}: {}",
-                    issue.code,
-                    issue.target.display(),
-                    issue.message
-                );
-            }
-            if !issues.is_empty() {
-                std::process::exit(3);
-            }
+            finish_apply(&issues, &failed);
         }
         Some(Command::Agents) => {
             let home = user_home.ok_or_else(|| std::io::Error::other("HOME is unavailable"))?;
