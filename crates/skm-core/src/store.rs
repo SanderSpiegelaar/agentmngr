@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 
@@ -9,12 +8,13 @@ use crate::{Error, paths::Paths};
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_initial.sql"),
     include_str!("../migrations/002_item_file_stamps.sql"),
+    include_str!("../migrations/003_project_sync.sql"),
 ];
 type WriteCommand = Box<dyn FnOnce(&mut Connection) + Send>;
 
 /// A single writer thread and independent, per-call read-only connections.
 pub struct Store {
-    db_file: PathBuf,
+    pub(crate) paths: Paths,
     writer: Option<mpsc::Sender<WriteCommand>>,
     thread: Option<JoinHandle<()>>,
 }
@@ -50,7 +50,7 @@ impl Store {
                 }
             })?;
         Ok(Self {
-            db_file: paths.db_file.clone(),
+            paths,
             writer: Some(writer),
             thread: Some(thread),
         })
@@ -82,7 +82,7 @@ impl Store {
         operation: impl FnOnce(&Connection) -> Result<T, Error>,
     ) -> Result<T, Error> {
         let connection =
-            Connection::open_with_flags(&self.db_file, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+            Connection::open_with_flags(&self.paths.db_file, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         connection.pragma_update(None, "foreign_keys", true)?;
         operation(&connection)
     }

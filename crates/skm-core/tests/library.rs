@@ -11,6 +11,7 @@ future = "keep me"
 [global]
 skills = ["zebra", "alpha"] # intentionally not sorted
 mcp = { github = ["codex", "claude-code"] }
+plugins = { tools = ["cursor"] }
 
 # First skill stays first
 [skills.zebra]
@@ -30,7 +31,6 @@ skills = ["zebra", "alpha"]
 mcp = { docs = ["*"] }
 hooks = { fmt = ["claude-code", "codex"] }
 subagents = { reviewer = ["gemini"] }
-plugins = { tools = ["cursor"] }
 "#;
 
 #[test]
@@ -71,6 +71,13 @@ fn multi_kind_set_validates_agents_and_wildcards() {
     assert!(Library::parse("schema = 2", AGENTS).is_err());
     assert!(Library::parse("schema = [", AGENTS).is_err());
     assert!(Library::parse("[global]", AGENTS).is_err());
+    assert!(
+        Library::parse(
+            "schema = 1\n[sets.rust]\nplugins = { tools = ['cursor'] }",
+            AGENTS
+        )
+        .is_err()
+    );
 }
 
 #[test]

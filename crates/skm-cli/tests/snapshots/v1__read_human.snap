@@ -1,0 +1,53 @@
+---
+source: crates/skm-cli/tests/v1.rs
+expression: human
+---
+$ skm list
+KIND	NAME	DESCRIPTION
+skill	review	Review code
+
+$ skm list --kind skill --scope global
+KIND	NAME	DESCRIPTION
+
+$ skm show review
+skill review
+Review code
+{"kind":"skill","name":"review","description":"Review code","path":"<ROOT>/manager/library/skills/review","metadata":{"name":"review","description":"Review code","license":null,"compatibility":null,"metadata":{},"allowed-tools":null},"source":null,"active":[],"problems":[]}
+
+$ skm status
+1 items, 1 projects, 0 pending
+[] enabled agents
+
+$ skm set list
+toolkit
+
+$ skm set show toolkit
+{"skills":["review"]}
+
+$ skm project list
+PATH	MODE	AUTO-SYNC
+<ROOT>/project	Copy	true
+
+$ skm doctor
+home: <ROOT>/manager
+library: <ROOT>/manager/library
+cache: <ROOT>/manager/cache
+trash: <ROOT>/manager/trash
+logs: <ROOT>/manager/logs
+config: <ROOT>/manager/config.toml
+db: <ROOT>/manager/state.db
+lock: <ROOT>/manager/lock
+ok git: Passed
+  fix: Install Git >=2.30 and put it on PATH (macOS: xcode-select --install).
+ok data-dir: Passed
+  fix: Make the data directory writable or select another directory with --home.
+ok registry: Passed
+  fix: Fix agent IDs and relative project paths in config.toml registry overrides.
+ok broken-links: Passed
+  fix: Restore missing link destinations or remove the broken skill links, then run skm on again.
+ok agent-configs: Passed
+  fix: Fix the syntax in the listed agent config files; doctor does not modify them.
+ok foreign-conflicts: Passed
+  fix: Review unmanaged skills; use skm adopt or move conflicting entries aside before enabling skills.
+ok edited-projects: Passed
+  fix: Review Edited project skills and preserve local changes before running skm project resume <path>.

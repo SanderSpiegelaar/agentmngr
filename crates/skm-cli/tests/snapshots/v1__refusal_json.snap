@@ -1,0 +1,10 @@
+---
+source: crates/skm-cli/tests/v1.rs
+expression: "f.comparable(&output.stdout, true)"
+---
+{
+  "ok": false,
+  "code": "E_ITEM_ACTIVE",
+  "message": "item is active; use --off to disable it before removal",
+  "fix": "Pass --off to turn it off everywhere, or run `skm off` first."
+}

@@ -1,0 +1,135 @@
+---
+source: crates/skm-cli/tests/v1.rs
+expression: json
+---
+$ skm list --json
+[
+  {
+    "kind": "skill",
+    "name": "review",
+    "description": "Review code"
+  }
+]
+
+$ skm list --kind skill --scope global --json
+[]
+
+$ skm show review --json
+{
+  "kind": "skill",
+  "name": "review",
+  "description": "Review code",
+  "path": "<ROOT>/manager/library/skills/review",
+  "metadata": {
+    "name": "review",
+    "description": "Review code",
+    "license": null,
+    "compatibility": null,
+    "metadata": {},
+    "allowed-tools": null
+  },
+  "source": null,
+  "active": [],
+  "problems": []
+}
+
+$ skm status --json
+{
+  "items": 1,
+  "agents": [],
+  "projects": [
+    {
+      "id": 2,
+      "path": "<ROOT>/project",
+      "name": "project",
+      "mode": "copy",
+      "auto_sync": true
+    }
+  ],
+  "pending": 0,
+  "pending_updates": 0
+}
+
+$ skm set list --json
+{
+  "toolkit": {
+    "skills": [
+      "review"
+    ]
+  }
+}
+
+$ skm set show toolkit --json
+{
+  "skills": [
+    "review"
+  ]
+}
+
+$ skm project list --json
+[
+  {
+    "id": 2,
+    "path": "<ROOT>/project",
+    "name": "project",
+    "mode": "copy",
+    "auto_sync": true
+  }
+]
+
+$ skm doctor --json
+{
+  "ok": true,
+  "checks": [
+    {
+      "id": "git",
+      "status": "ok",
+      "message": "Passed",
+      "fix": "Install Git >=2.30 and put it on PATH (macOS: xcode-select --install)."
+    },
+    {
+      "id": "data-dir",
+      "status": "ok",
+      "message": "Passed",
+      "fix": "Make the data directory writable or select another directory with --home."
+    },
+    {
+      "id": "registry",
+      "status": "ok",
+      "message": "Passed",
+      "fix": "Fix agent IDs and relative project paths in config.toml registry overrides."
+    },
+    {
+      "id": "broken-links",
+      "status": "ok",
+      "message": "Passed",
+      "fix": "Restore missing link destinations or remove the broken skill links, then run skm on again."
+    },
+    {
+      "id": "agent-configs",
+      "status": "ok",
+      "message": "Passed",
+      "fix": "Fix the syntax in the listed agent config files; doctor does not modify them."
+    },
+    {
+      "id": "foreign-conflicts",
+      "status": "ok",
+      "message": "Passed",
+      "fix": "Review unmanaged skills; use skm adopt or move conflicting entries aside before enabling skills."
+    },
+    {
+      "id": "edited-projects",
+      "status": "ok",
+      "message": "Passed",
+      "fix": "Review Edited project skills and preserve local changes before running skm project resume <path>."
+    }
+  ],
+  "home": "<ROOT>/manager",
+  "library": "<ROOT>/manager/library",
+  "cache": "<ROOT>/manager/cache",
+  "trash": "<ROOT>/manager/trash",
+  "logs": "<ROOT>/manager/logs",
+  "config": "<ROOT>/manager/config.toml",
+  "db": "<ROOT>/manager/state.db",
+  "lock": "<ROOT>/manager/lock"
+}

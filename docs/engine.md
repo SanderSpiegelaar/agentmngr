@@ -1,5 +1,115 @@
 # Engine API (T-017)
 
+## CLI previews (T-031)
+
+`install::plan_install` returns either name collisions or an `InstallPlan` with
+the exact engine `plan` and installed `items`. Retain both it and the `Preview`
+until `InstallPlan::apply` finishes. Planning creates no scope, operations or
+library files. Apply binds the preview scope to Global and applies that plan.
+`projects::plan_staged_project` accepts name-to-staged-tree paths for planning
+install-and-enable together; link destinations and lock provenance still refer
+to the final library. Callers apply the install successfully before these plans.
+
+`projects::plan_registration` returns the proposed registration report and guarded
+reattachment plan without registering or claiming anything. `engine::plan_undo`
+accepts paths, store and optional operation ID, returning the same inverse plan
+as undo after read-only preflight. Undo repeats preflight under the apply lock.
+`indexer::preview_reindex` runs full reindex in a rolled-back transaction and
+returns the same counts without persisting index rows. `global_skills::validate_name`
+is public for CLI item-name validation.
+
+CLI JSON mutation output contains `changes` and `plans`, with engine actions and
+issues. Apply failures add `done` and `failed` and set `ok` to false in that same
+document. Human previews list the same actions. Every mutation supports
+`--dry-run` and `--yes`; existing noninteractive commands remain noninteractive.
+Non-skill selections are retained for M3, as in the project core APIs; installing
+non-skill sources still refuses until their installers exist.
+
+Run `cargo test -p skm-cli --release --test v1 list_1000_skills_cold -- --ignored --nocapture`
+for the 1,000-skill list gate. It creates and indexes real skill trees, then times
+five fresh CLI processes, including launch, captured output and shutdown. The
+fixture includes 1,000 provenance entries as well as the skill trees. It
+does not exclude the first sample or warm up `skm`. Filesystem caches are not
+flushed. The strict 50 ms assertion remains enabled. On this macOS host the first
+launch after Cargo produces/restores the executable took 233.91 ms in the final
+run; directly rerunning the test binary measured 6.73 to 8.80 ms across five fresh
+processes. Temporary
+phase instrumentation located the slow sample outside the command's measured
+startup/list/shutdown work (under 8 ms), not in parsing the 1,000 skills.
+
+## Install (T-024)
+
+`install::preview(paths, git, source)` returns a `Preview` that owns staged skill
+trees. `skills()` exposes names, repository-relative paths, descriptions, files,
+byte sizes, script/hook flags, and frontmatter warnings. Git mirrors are keyed by
+URL under `cache/git/`; later previews fetch the existing mirror. Discovery uses
+`ls-tree`; extraction uses system `tar`. Local sources are copied and verified
+with the engine's byte-, permission-, and symlink-sensitive tree hash. Links
+outside a skill directory are rejected. Preview work belongs on a worker thread.
+
+`install::install(paths, store, &preview, &[Selection { skill: index, collision }])`
+uses indices into `skills()`. `CollisionChoice::Abort` is the default;
+`Rename(name)` updates the staged frontmatter name; `Replace` journals the old
+tree in trash. `InstallResult::Collisions` returns typed names and targets before
+any library writes. Duplicate destinations still collide, even with `Replace`.
+
+`InstallResult::Applied { items, result }` exposes installed paths and provenance
+plus the engine `ApplyResult`. Callers must inspect its issues and failures;
+partial effects remain undoable through `result.op_id`. Items are returned only
+when the manifest write succeeds. Copies and base snapshots precede that write
+and are hash-checked by the engine. Provenance includes the Git commit or local
+origin, install timestamp, and npx-compatible `base_hash`. Pristine snapshots live
+at `cache/base/<name>/<base_hash>/`. Install does not enable skills in any scope.
+
+## System Git (T-023)
+
+`git::GitRunner::new(timeout)` checks system Git >=2.30. `with_binary(path, timeout)`
+injects an executable for tests. Commands disable terminal prompts, capture stderr,
+and enforce the timeout, including output collection. Auth failures return
+`E_GIT_AUTH`; transport failures and timeouts return `E_NETWORK`; missing or old
+Git returns `E_GIT_MISSING`. Other command failures return `E_IO` with stderr.
+These synchronous methods belong on worker threads, not the GUI thread.
+
+`clone_bare(url, destination, optional_branch)` uses a shallow blobless bare clone.
+`bare(path)` reopens only bare repositories. `BareRepository` exposes `fetch`,
+`ls_tree`, `rev_parse`, and `archive` (tar bytes). Fetch callers resolve
+`FETCH_HEAD` for the fetched revision. `project(path)` returns `ProjectRepository`
+with only `ls_files` (repository-relative paths) and `exclude_path` (absolute,
+worktree-aware). Neither handle exposes arbitrary commands, add, or commit.
+Tree and tracked-path lists use NUL delimiters and preserve Unix filename bytes.
+
+## Reconciliation
+## Watcher (T-021)
+
+`watcher::BatchIndexer::new(paths, Arc<Store>, targets, events)` captures target
+baselines. `Watcher::start(roots, indexer)` watches caller-supplied `WatchRoot::Tree`
+directories and `WatchRoot::File` paths. Pass the library, universal skills roots,
+registered projects' skills roots, lock/config files, and the manager's `.changed`.
+Files use parent-directory watches filtered by name; missing parents use the nearest
+existing ancestor recursively, so later directory creation needs no polling.
+Drop the watcher to stop and join its worker. Restart with new inputs when the
+registered projects or subscribed targets change. No project schema is required.
+
+`WatchedTarget` maps a path to an item ID. `entry: None` uses engine snapshots;
+`Some(vec!["mcpServers", "github"])` compares only that JSON/TOML entry. Unrelated
+entries do not emit changes. Library IDs are decimal SQLite IDs; supply those same
+IDs for targets that belong to library items. `BatchIndexer::process` accepts a
+native-event batch for deterministic replay and emits one `ItemsChanged` containing
+only changed IDs. `indexer::catch_up_paths` reparses library-relative prefixes,
+including new/deleted items. Directory/rescan events select only their subtree.
+
+Native notify events are grouped after 250 ms of quiet, using
+notify-debouncer-full's event records. Its stock debouncer is deliberately not
+started because its periodic tick wakes even when idle. The worker blocks on
+`recv()` when empty and uses `recv_timeout()` only with pending events; there is
+no polling backend, interval loop, or idle timer. The unit test
+`idle_worker_has_zero_timer_wakeups` counts worker wakeups before and after a
+batch. Native integration tests also cover a 400-file burst and parent filtering.
+Watcher/backend errors use `E_IO`; invalid subscribed config entries use
+`E_CONFIG_PARSE`. Background errors are sent as `CoreEvent::Error`.
+
+## Planning and applying
+
 `engine::observe(&paths, &store, &targets)` reads exact target fingerprints and
 whole-path ledger rows. `engine::plan(scope_id, &desired, &observations)` is pure:
 only explicitly supplied targets are reconciled. Request `DesiredContent::Absent`
@@ -140,3 +250,151 @@ registry target or agent-specific skills directory is used. `skm on <skill>` and
 `skm off <skill>` call the core API; `--dry-run` prints the plan and issues, and
 refusals exit 3. CLI initialization may still create the manager layout, logs and
 SQLite database during a dry run, but does not save desired state or apply links.
+
+## Source specs (T-022)
+
+`source::parse(spec, path)` returns `Source::GitHub`, `Git`, `Local`, or
+`SkillsSh`. `path: Option<&str>` is the separate `--path` argument, accepted only
+with git URLs. Git sources retain their URL, optional ref and relative subpath;
+GitHub and skills.sh selections retain owner, repo and skill name (optional for
+GitHub). Parsing performs no filesystem or network access. Local paths must be
+explicit (`./`, `../`, or absolute) and are retained without home expansion.
+GitHub tree URLs use the first segment after `tree/` as the ref. For refs containing
+slashes, use a repository URL with `#feature/branch` and a separate `--path`.
+Ambiguous specs and conflicting selectors return `E_CONFIG_PARSE` with a specific
+correction in the message.
+## skills.sh search (T-025)
+
+`search::SearchClient::from_env()` selects `SKILLSMGR_SKILLS_API`, then
+`SKILLS_API_URL`, then `https://skills.sh` (empty overrides are ignored).
+`SearchClient::new(base_url)` supplies an explicit base URL. `search(query, limit)`
+returns `SearchResult` entries with name, source, skill ID and installs;
+`SearchResult::install_source()` yields `owner/repo@skill` for the install flow.
+Results without an owner/repo source or skill ID are omitted.
+Pass 50 for the default UI limit. This is blocking I/O for a worker thread, with
+a 3-second total timeout and 1-second DNS/connect timeouts. Failed HTTP requests,
+body reads and malformed responses return `E_NETWORK`. Successful results are
+cached in memory per client and exact query/limit for 10 minutes, including empty
+results. Reuse the client to retain its cache. No downloads or leaderboard calls.
+The `live-tests` Cargo feature enables the otherwise excluded live smoke test.
+## Projects and sets (T-026)
+
+`projects::register(&store, path)` canonicalizes an existing directory and records
+an idempotent SQLite registration with `ProjectMode::Copy` and `auto_sync = true`.
+It creates nothing in the repository. `list`, `set_mode`, `set_auto_sync`,
+`use_set`, `unuse_set`, `used_sets`, `set_direct_item`, `remove_direct_item`, and
+`direct_items` manage machine-local state. They never apply filesystem changes.
+Direct selections return `DirectItem { item, agents }`, preserving NULL/inherit
+separately from an explicit wildcard agent list.
+`unregister` forgets local selections and ownership while leaving files untouched;
+callers implementing `--clean` must plan and apply cleanup before unregistering.
+
+Registration reattaches same-name copy-mode skill trees whose exact engine hash
+matches the local library. Guarded `Claim` actions record ownership without
+changing repository files. Existing ledger fingerprints are never refreshed to
+hide edits. `projects::register_with_report(&store, path)` returns
+`Registration { project, reattachment }`; `ReattachResult::skills` maps names to
+`ProjectSkillState::{Attached, Edited, Foreign}`. Same-name mismatches are Edited;
+unknown names are Foreign. Unsafe paths and symlinks are never newly claimed.
+`suggested_sets` lists existing library sets whose nonempty skill membership is
+covered by v1 lock entries. Suggestions do not create sets or select memberships.
+Missing locks are optional; malformed locks refuse before registration. The usual
+`register` performs the same attachment and returns only the project.
+
+Set definitions remain solely in `Library::sets` in `library.toml`.
+`Library::{create_set, update_set, delete_set}` mutate that model; persist with
+`Library::save`. `ItemSelection::{set_item, remove_item, entries}` handle membership
+by `ItemRef` and kind. Plugins are rejected in sets and direct project selections.
+Read/list sets through `Library::sets`. Set deletion can leave local project links;
+effective calculation treats missing definitions as empty, preserving those links
+for a later synced reappearance or explicit `unuse_set`.
+
+`projects::effective` unions selected sets and direct items, deduplicates skills,
+and subtracts Global selections per agent. Direct non-skill lists override set
+lists, including an empty list. Wildcards expand to enabled registry agents that
+support the kind at project scope. Explicit agents are also filtered for enabled
+support. `effective_project` loads local selections and enabled agents from SQLite.
+A NULL direct agent list inherits set membership when present, otherwise `*`;
+an explicit `["*"]` overrides the sets with all enabled supported agents.
+
+`projects::plan_set_change(&paths, &store, &before, &after, name, &registry)`
+returns `ProjectPlan { project, plan }` for exactly the projects using that set,
+including paused projects so callers can preview pending work. Call it with the
+old and new library snapshots, before removing project links. Only skill names
+from the old/new set are reconciled, using each project's effective post-edit
+selection, mode, and the existing engine's ownership checks. Removed members get
+explicit absent targets unless another set or direct selection retains them.
+`projects::plan_skills` exposes the same planner for an explicit skill-name scope.
+Neither function saves definitions or applies. `plan_skills` is the low-level
+tree/link planner without lock or exclude writes. `plan_set_change` includes
+mode-specific lock and exclude updates. Non-skill selections are retained for M3
+renderers but produce no filesystem actions in M1.
+
+## Project copies and locks (T-027)
+
+`projects::plan_project(&paths, &store, &project, &library, &registry)` reconciles
+effective skills and previously owned skill targets, including removals.
+`apply_project` takes the same arguments plus `actor` and optional events, and
+calls engine apply once. Callers choose whether to run paused projects.
+`plan_copy_project` takes an explicit selection and skill-name scope for set edits.
+The copy-mode path is separate from link planning and never changes Git's index.
+
+Copy plans write real trees with exact ledger fingerprints and verified npx
+computed hashes. The v1 lock uses sorted skill keys, provenance sources and
+relative local paths (falling back to the library tree when provenance is absent).
+Local restore requires that source to exist on the restoring machine.
+Foreign lock entry objects retain their exact JSON bytes through `RawValue`;
+same-name foreign entries refuse rather than being claimed. Lock ownership is
+derived from the skill target ledger, not from ownership of the whole lock file.
+Unsupported or malformed locks refuse without writes. Edited copies refuse the
+copy plan. Lock writes are snapshot-bound merges, permitted on existing regular
+files, and depend on successful skill effects. Concurrent lock edits are refused
+by apply. As with the engine, a failed action can leave partial tree changes;
+dependent lock writes do not publish a claim for failed copies.
+
+## Project links (T-029)
+
+`plan_project` dispatches by `ProjectMode`. `plan_link_project` takes an explicit
+selection and skill-name scope, like `plan_copy_project`. Link plans create
+library symlinks and merge a `skillsmgr managed paths` block into Git's
+worktree-aware `info/exclude`. Only created skill paths enter the block. Other
+lines retain their bytes, and an empty block disappears. Patterns escape Git
+wildcards. Skill names containing line breaks refuse with `E_INVALID_SKILL`.
+
+Mode switches use ordinary previewable engine actions. Link mode removes owned
+lock entries, preserving foreign entry bytes and unknown top-level fields. An
+empty manager-owned lock disappears. Copy mode recreates the lock and removes
+the exclude block. Metadata actions require successful skill changes and refuse
+stale file snapshots. Edited copies refuse the whole plan. No mode changes Git's
+index, so switching previously tracked copies still shows working-tree changes.
+## Project auto-sync (T-028)
+
+`projects::sync::sync_change(paths, store, library, registry, &Change)` handles
+`Change::Items` (watcher/index decimal IDs) or `Change::Set` (a saved set edit).
+It reconciles each affected project independently through `plan_project` and
+engine apply, recording an undoable operation per auto-apply. `SyncOutcome`
+preserves per-project pending counts, planning refusals, apply results and errors.
+Callers must inspect apply issues and failures. Edited copies refuse with
+`E_PROJECT_EDITED`; other projects still sync. Unknown/deleted IDs conservatively
+reconcile all projects because their former names are no longer indexed.
+
+`pause` uses the existing `auto_sync` flag. `pending_count` counts distinct pending
+item IDs/set names, not individual filesystem events; repeated changes coalesce.
+Pending state survives restart and is retained on refusal/failure. `resume`
+reconciles current desired state, clearing only successfully processed revisions.
+
+`edited_copy` captures a review-bound observation. Pass it to `overwrite`,
+`pull_into_library`, or `keep`; stale reviews refuse. `overwrite` first journals a
+ledger-only baseline claim, then a separate copy/lock operation whose undo restores
+the edited copy and old lock. It returns both apply results. `pull_into_library`
+journals the import and baseline claim together; subsequent sync updates locks
+and other projects. `keep` leaves the copy untouched and pauses that project.
+
+`run_watcher_sync` blocks on a caller-owned `Receiver<CoreEvent>` until disconnect,
+with no timers. Run it on a worker thread and tee watcher `ItemsChanged` events
+into its input. Each batch reloads `library.toml` and sends
+`Result<Vec<SyncOutcome>, Error>` on a separate results channel. Other core events
+are ignored here and belong to the application's bridge. For external set edits,
+subscribe `library/library.toml` as a `WatchedTarget` with a non-index ID such as
+`library-manifest`, so manifest-only edits also emit `ItemsChanged`. In-process
+set editors can call `sync_change(Change::Set(name))` directly after saving.

@@ -24,6 +24,8 @@ pub enum Error {
     SecretInProject(String),
     #[error("{0}")]
     ProjectEdited(String),
+    #[error("{0}")]
+    ItemActive(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("{0}")]
@@ -47,6 +49,7 @@ impl Error {
             Self::SecretMissing(_) => "E_SECRET_MISSING",
             Self::SecretInProject(_) => "E_SECRET_IN_PROJECT",
             Self::ProjectEdited(_) => "E_PROJECT_EDITED",
+            Self::ItemActive(_) => "E_ITEM_ACTIVE",
             Self::Io(_) => "E_IO",
             Self::Logging(_) => "E_LOGGING",
             Self::Database(_) => "E_DATABASE",
@@ -61,7 +64,9 @@ impl Error {
             }
             Self::ConfigChanged(_) => "Reload the config and create a new plan before applying.",
             Self::GitAuth(_) => "Check your Git credentials and repository access.",
-            Self::GitMissing(_) => "Install Git and make it available on PATH.",
+            Self::GitMissing(_) => {
+                "Install Git >=2.30 with Xcode Command Line Tools (`xcode-select --install`) and make it available on PATH."
+            }
             Self::Network(_) => "Check your connection and retry.",
             Self::Locked(_) => "Wait for the other apply operation to finish and retry.",
             Self::InvalidSkill(_) => "Fix the skill metadata or contents and retry.",
@@ -70,6 +75,7 @@ impl Error {
             Self::SecretInProject(_) => {
                 "Supply the secret through an environment variable; do not write it into the project."
             }
+            Self::ItemActive(_) => "Pass --off to turn it off everywhere, or run `skm off` first.",
             Self::ProjectEdited(_) => {
                 "Review the project edits and create a new plan before applying."
             }
@@ -110,6 +116,7 @@ mod tests {
                 "E_SECRET_IN_PROJECT",
             ),
             (Error::ProjectEdited("project".into()), "E_PROJECT_EDITED"),
+            (Error::ItemActive("item".into()), "E_ITEM_ACTIVE"),
             (std::io::Error::other("disk").into(), "E_IO"),
             (Error::Logging("logger".into()), "E_LOGGING"),
             (Error::Database("database".into()), "E_DATABASE"),

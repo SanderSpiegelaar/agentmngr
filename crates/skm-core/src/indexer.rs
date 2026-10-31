@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{self, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, params};
@@ -86,12 +86,21 @@ fn load_rows(connection: &Connection) -> Result<Vec<IndexRow>, Error> {
 
 /// None discovers all items; Some limits work to existing item IDs from watcher events.
 pub fn catch_up(store: &Store, paths: &Paths, ids: Option<&[i64]>) -> Result<Counts, Error> {
-    reindex(store, paths, ids, false)
+    reindex(store, paths, ids, false, None, true)
+}
+
+/// Re-parses only items beneath library-relative prefixes, including new and deleted items.
+pub fn catch_up_paths(store: &Store, paths: &Paths, prefixes: &[PathBuf]) -> Result<Counts, Error> {
+    reindex(store, paths, None, true, Some(prefixes), true)
 }
 
 /// Re-parses every item, preserving IDs, lazy hashes and indexed_at for identical rows.
 pub fn full_reindex(store: &Store, paths: &Paths) -> Result<Counts, Error> {
-    reindex(store, paths, None, true)
+    reindex(store, paths, None, true, None, true)
+}
+
+pub fn preview_reindex(store: &Store, paths: &Paths) -> Result<Counts, Error> {
+    reindex(store, paths, None, true, None, false)
 }
 
 fn reindex(
@@ -99,19 +108,26 @@ fn reindex(
     paths: &Paths,
     ids: Option<&[i64]>,
     force: bool,
+    prefixes: Option<&[PathBuf]>,
+    persist: bool,
 ) -> Result<Counts, Error> {
     let library_path = paths.library.clone();
     let ids = ids.map(|ids| ids.iter().copied().collect::<BTreeSet<_>>());
+    let prefixes = prefixes.map(<[PathBuf]>::to_vec);
     store.write(move |connection| {
         let transaction = connection.transaction()?;
         let old = load_rows(&transaction)?;
-        let candidates = if let Some(ids) = &ids {
+        let mut candidates = if let Some(ids) = &ids {
             old.iter().filter(|row| ids.contains(&row.id))
                 .map(|row| (row.rel_path.clone(), (row.kind.clone(), row.name.clone())))
                 .collect()
         } else {
             discover(&library_path)?
         };
+        let selected = |relative: &str| prefixes.as_ref().is_none_or(|prefixes| {
+            prefixes.iter().any(|prefix| Path::new(relative).starts_with(prefix))
+        });
+        candidates.retain(|relative, _| selected(relative));
         let manifest = library_path.join("library.toml");
         let library = match fs::read_to_string(&manifest) {
             Ok(text) => {
@@ -148,7 +164,7 @@ fn reindex(
             if let Some(before) = before {
                 row.id = before.id;
                 row.indexed_at = before.indexed_at;
-                if ids.is_none() && row.stamp == before.stamp && row.file_stamp == before.file_stamp && row.meta_json == before.meta_json {
+                if ids.is_none() && prefixes.is_none() && row.stamp == before.stamp && row.file_stamp == before.file_stamp && row.meta_json == before.meta_json {
                     row.content_hash = before.content_hash.clone();
                 }
                 if &row == before {
@@ -174,13 +190,13 @@ fn reindex(
             )?;
         }
         for row in &old {
-            if ids.as_ref().is_none_or(|ids| ids.contains(&row.id)) && !seen.contains(&row.rel_path) {
+            if selected(&row.rel_path) && ids.as_ref().is_none_or(|ids| ids.contains(&row.id)) && !seen.contains(&row.rel_path) {
                 transaction.execute("DELETE FROM items WHERE id=?1", [row.id])?;
                 counts.removed += 1;
             }
         }
         counts.total = transaction.query_row("SELECT count(*) FROM items", [], |row| row.get::<_, i64>(0))? as usize;
-        transaction.commit()?;
+        if persist { transaction.commit()?; }
         Ok(counts)
     })
 }

@@ -10,7 +10,11 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 skm-core = { path = "../skm-core" }
+toml.workspace = true
+tempfile.workspace = true
 
 [dev-dependencies]
-tempfile.workspace = true
+insta.workspace = true

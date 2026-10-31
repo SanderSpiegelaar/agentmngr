@@ -1,256 +1,115 @@
-use std::collections::BTreeSet;
+mod args;
+mod commands;
+mod doctor;
+mod output;
+mod project;
+mod sets;
+
+use clap::Parser;
+use skm_core::{Error, library::Library, paths::Paths, registry::Registry, store::Store};
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use clap::{Parser, Subcommand};
-use skm_core::paths::Paths;
+use args::Cli;
 
-#[derive(Parser)]
-#[command(name = "skm", version)]
-struct Cli {
-    #[arg(long, global = true)]
-    home: Option<PathBuf>,
-    #[arg(long, global = true)]
-    dry_run: bool,
-    #[command(subcommand)]
-    command: Option<Command>,
+struct Context {
+    cli: Cli,
+    paths: Paths,
+    home: PathBuf,
+    store: Store,
+    registry: Registry,
+    report: std::cell::RefCell<Option<serde_json::Value>>,
 }
 
-#[derive(Subcommand)]
-enum Command {
-    /// Print resolved paths.
-    Doctor {
-        #[arg(long)]
-        reindex: bool,
-    },
-    /// List registered agents and their detection and management status.
-    Agents,
-    /// Undo a recent operation, or list the last 50 operations.
-    Undo {
-        #[arg(conflicts_with = "list")]
-        op_id: Option<i64>,
-        #[arg(long)]
-        list: bool,
-    },
-    /// Enable a skill globally.
-    On { skill: String },
-    /// Disable a skill globally.
-    Off { skill: String },
-    /// List unmanaged universal skills and their lock provenance.
-    Foreign {
-        #[arg(long)]
-        project: Option<PathBuf>,
-    },
-    /// Explicitly import unmanaged skills into the library.
-    Adopt {
-        #[arg(required = true, num_args = 1..)]
-        names: Vec<String>,
-        #[arg(long)]
-        project: Option<PathBuf>,
-    },
-}
-
-fn finish_apply(issues: &[skm_core::engine::PlanIssue], failed: &[skm_core::engine::PlanIssue]) {
-    for (kind, problems) in [("issue", issues), ("failed", failed)] {
-        for problem in problems {
-            eprintln!(
-                "{kind}: {}: {}: {}",
-                problem.code,
-                problem.target.display(),
-                problem.message
-            );
+impl Context {
+    fn library(&self) -> Result<Library, Error> {
+        match Library::load(
+            &self.paths.library.join("library.toml"),
+            &self.known_agents(),
+        ) {
+            Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+                Ok(Library::default())
+            }
+            result => result,
         }
     }
-    let code = if !failed.is_empty() {
-        1
-    } else if !issues.is_empty() {
-        3
-    } else {
-        0
-    };
-    if code != 0 {
-        std::process::exit(code);
+
+    fn known_agents(&self) -> Vec<&str> {
+        self.registry.agents.keys().map(String::as_str).collect()
     }
 }
 
-fn main() -> Result<(), skm_core::Error> {
-    let cli = Cli::parse();
+fn run(cli: Cli) -> Result<i32, Error> {
     let env_home = std::env::var_os("SKILLSMGR_HOME").map(PathBuf::from);
-    let user_home = std::env::home_dir();
-    let mut paths = Paths::resolve(
-        cli.home.as_deref(),
-        env_home.as_deref(),
-        user_home.as_deref(),
-    )?;
+    let home = std::env::home_dir().ok_or_else(|| std::io::Error::other("HOME is unavailable"))?;
+    let mut paths = Paths::resolve(cli.home.as_deref(), env_home.as_deref(), Some(&home))?;
+    let registry = Registry::load()?;
+    if let Some(args::Command::Doctor {
+        reindex,
+        ref bundle,
+    }) = cli.command
+    {
+        return commands::doctor(
+            &cli,
+            &mut paths,
+            &registry,
+            &home,
+            reindex,
+            bundle.as_deref(),
+        );
+    }
     paths.ensure_layout()?;
     let _logging = skm_core::logging::init_logging(&paths.logs)?;
-    match cli.command {
-        Some(Command::Foreign { project }) => {
-            let home = user_home.ok_or_else(|| std::io::Error::other("HOME is unavailable"))?;
-            let store = skm_core::store::Store::open(&paths)?;
-            for entry in
-                skm_core::foreign_skills::list_foreign(&paths, &store, &home, project.as_deref())?
-            {
-                println!("{}\t{:?}\t{:?}", entry.name, entry.class, entry.provenance);
-            }
-        }
-        Some(Command::Adopt { names, project }) => {
-            let home = user_home.ok_or_else(|| std::io::Error::other("HOME is unavailable"))?;
-            let store = skm_core::store::Store::open(&paths)?;
-            let (issues, failed) = if cli.dry_run {
-                let plan = skm_core::foreign_skills::plan_adopt(
-                    &paths,
-                    &store,
-                    &home,
-                    &names,
-                    project.as_deref(),
-                )?;
-                println!("{}", plan.summary);
-                for action in &plan.actions {
-                    println!("{:?}", action.action);
-                }
-                (plan.issues, Vec::new())
-            } else {
-                let result = skm_core::foreign_skills::adopt(
-                    &paths,
-                    &store,
-                    &home,
-                    &names,
-                    project.as_deref(),
-                )?;
-                println!(
-                    "{} actions, {} issues, {} failed",
-                    result.done.len(),
-                    result.issues.len(),
-                    result.failed.len()
-                );
-                (result.issues, result.failed)
-            };
-            finish_apply(&issues, &failed);
-        }
-        Some(Command::Undo { op_id, list }) => {
-            let store = skm_core::store::Store::open(&paths)?;
-            if list {
-                println!("ID\tAT\tACTOR\tRESULT\tSUMMARY");
-                for op in skm_core::engine::list_ops(&store)? {
-                    println!(
-                        "{}\t{}\t{}\t{}\t{}",
-                        op.id, op.at, op.actor, op.result, op.summary
-                    );
-                }
-            } else {
-                let result = match skm_core::engine::undo(&paths, &store, op_id, "cli", None) {
-                    Ok(result) => result,
-                    Err(error) => {
-                        eprintln!("{}: {}", error.code(), error);
-                        std::process::exit(1);
-                    }
-                };
-                println!("op {}: {} undone", result.op_id, result.done.len());
-                finish_apply(&result.issues, &result.failed);
-            }
-        }
-        Some(Command::On { ref skill }) | Some(Command::Off { ref skill }) => {
-            let on = matches!(cli.command, Some(Command::On { .. }));
-            let home = user_home.ok_or_else(|| std::io::Error::other("HOME is unavailable"))?;
-            let store = skm_core::store::Store::open(&paths)?;
-            let (issues, failed) = if cli.dry_run {
-                let plan =
-                    skm_core::global_skills::plan_global_skill(&paths, &store, &home, skill, on)?;
-                println!("{}", plan.summary);
-                for action in &plan.actions {
-                    println!("{:?}", action.action);
-                }
-                (plan.issues, Vec::new())
-            } else {
-                let result =
-                    skm_core::global_skills::set_global_skill(&paths, &store, &home, skill, on)?;
-                println!(
-                    "{} actions, {} issues, {} failed",
-                    result.done.len(),
-                    result.issues.len(),
-                    result.failed.len()
-                );
-                (result.issues, result.failed)
-            };
-            finish_apply(&issues, &failed);
-        }
-        Some(Command::Agents) => {
-            let home = user_home.ok_or_else(|| std::io::Error::other("HOME is unavailable"))?;
-            let config = skm_core::config::Config::load(&paths.config_file)?;
-            let registry = skm_core::registry::Registry::load()?.resolve(
-                &home,
-                &std::env::vars_os()
-                    .filter_map(|(key, value)| key.into_string().ok().map(|key| (key, value)))
-                    .collect(),
-                &config,
-            )?;
-            let path = std::env::var_os("PATH").unwrap_or_default();
-            let store = skm_core::store::Store::open(&paths)?;
-            let enabled = store.read(|connection| {
-                let mut query = connection.prepare("SELECT id FROM agents WHERE enabled = 1")?;
-                Ok(query
-                    .query_map([], |row| row.get(0))?
-                    .collect::<Result<BTreeSet<String>, _>>()?)
-            })?;
-            // Detection does not opt an agent into management.
-            let statuses = registry.detect(&path, &enabled)?;
-            let statuses = store.write(move |connection| {
-                let transaction = connection.transaction()?;
-                let detected_at = SystemTime::now().duration_since(UNIX_EPOCH)
-                    .map_err(std::io::Error::other)?.as_secs() as i64;
-                for status in &statuses {
-                    transaction.execute(
-                        "INSERT INTO agents (id, detected, enabled, detected_at) VALUES (?1, ?2, 0, ?3)
-                         ON CONFLICT(id) DO UPDATE SET detected=excluded.detected, detected_at=excluded.detected_at",
-                        (&status.id, status.detected, detected_at),
-                    )?;
-                }
-                transaction.commit()?;
-                Ok(statuses)
-            })?;
-            println!("{:<14} {:<20} {:<10} ENABLED", "ID", "AGENT", "DETECTED");
-            for status in statuses {
-                println!(
-                    "{:<14} {:<20} {:<10} {}",
-                    status.id, status.name, status.detected, status.enabled
-                );
-            }
-        }
-        Some(Command::Doctor { reindex }) => {
-            let registry = skm_core::registry::Registry::load()?;
-            let known_agents: Vec<_> = registry.agents.keys().map(String::as_str).collect();
-            match skm_core::library::Library::load(
-                &paths.library.join("library.toml"),
-                &known_agents,
-            ) {
-                Ok(_) => {}
-                Err(skm_core::Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
-                }
-                Err(error) => return Err(error),
-            }
-            if reindex {
-                let store = skm_core::store::Store::open(&paths)?;
-                let counts = skm_core::indexer::full_reindex(&store, &paths)?;
-                println!(
-                    "reindex: {} total, {} inserted, {} updated, {} removed, {} unchanged",
-                    counts.total, counts.inserted, counts.updated, counts.removed, counts.unchanged
-                );
-            }
-            for (name, path) in [
-                ("home", &paths.home),
-                ("library", &paths.library),
-                ("cache", &paths.cache),
-                ("trash", &paths.trash),
-                ("logs", &paths.logs),
-                ("config", &paths.config_file),
-                ("db", &paths.db_file),
-                ("lock", &paths.lock_file),
-            ] {
-                println!("{name}: {}", path.display());
-            }
-        }
-        None => {}
+    let store = Store::open(&paths)?;
+    let context = Context {
+        cli,
+        paths,
+        home,
+        store,
+        registry,
+        report: Default::default(),
+    };
+    let result = commands::run(&context);
+    if result.is_ok()
+        && let Some(value) = context.report.take()
+    {
+        println!("{value}");
     }
-    Ok(())
+    result
+}
+
+fn main() {
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => {
+            let code = error.exit_code();
+            if code != 0 && std::env::args().any(|arg| arg == "--json") {
+                println!(
+                    "{}",
+                    serde_json::json!({"ok":false,"code":"E_USAGE","message":error.to_string(),"fix":"Run skm --help."})
+                );
+            } else {
+                let _ = error.print();
+            }
+            std::process::exit(code);
+        }
+    };
+    let json = cli.json;
+    let code = match run(cli) {
+        Ok(code) => code,
+        Err(error) => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({"ok":false,"code":error.code(),"message":error.to_string(),"fix":error.hint()})
+                );
+            } else {
+                eprintln!("{}: {}\n{}", error.code(), error, error.hint());
+            }
+            match error {
+                Error::ForeignTarget(_) | Error::NameCollision(_) | Error::ProjectEdited(_) => 3,
+                _ => 1,
+            }
+        }
+    };
+    std::process::exit(code);
 }

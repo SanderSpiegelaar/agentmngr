@@ -1,0 +1,11 @@
+---
+source: crates/skm-cli/tests/v1.rs
+expression: "f.comparable(&output.stdout, false)"
+---
+ID             AGENT                DETECTED   ENABLED
+claude-code    Claude Code          false      false
+codex          Codex                false      false
+copilot-cli    GitHub Copilot CLI   false      false
+cursor         Cursor               false      false
+gemini-cli     Gemini CLI           false      false
+opencode       OpenCode             false      false
