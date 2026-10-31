@@ -1,0 +1,31 @@
+Graphics/Displays:
+
+    Apple M5 Pro:
+
+      Chipset Model: Apple M5 Pro
+      Type: GPU
+      Bus: Built-In
+      Total Number of Cores: 20
+      Vendor: Apple (0x106b)
+      Metal Support: Metal 4
+      Displays:
+        Color LCD:
+          Display Type: Built-in Liquid Retina XDR Display
+          Resolution: 3024 x 1964 Retina
+          Main Display: Yes
+          Mirror: Off
+          Online: Yes
+          Automatically Adjust Brightness: No
+          Connection Type: Internal
+        LG ULTRAGEAR+:
+          Resolution: 3840 x 2160 (2160p/4K UHD 1 - Ultra High Definition)
+          UI Looks like: 3840 x 2160 @ 144.00Hz
+          Mirror: Off
+          Online: Yes
+          Rotation: Supported
+        LG ULTRAGEAR+:
+          Resolution: 3840 x 2160 (2160p/4K UHD 1 - Ultra High Definition)
+          UI Looks like: 3840 x 2160 @ 144.00Hz
+          Mirror: Off
+          Online: Yes
+          Rotation: Supported
