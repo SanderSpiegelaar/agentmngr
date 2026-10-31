@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+fd-lock.workspace = true
 rusqlite.workspace = true
 serde_yaml_ng.workspace = true
 icu_collator.workspace = true
@@ -18,6 +19,7 @@ serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 toml_edit.workspace = true
+tempfile.workspace = true
 
 [dev-dependencies]
-tempfile.workspace = true
+proptest.workspace = true

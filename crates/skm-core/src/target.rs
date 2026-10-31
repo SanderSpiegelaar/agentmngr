@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{Error, content_hash::content_hash, paths::Paths};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ItemKind {
     Skill,
     Mcp,
@@ -18,13 +18,13 @@ pub enum ItemKind {
     Plugin,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ItemRef {
     pub kind: ItemKind,
     pub name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TargetClass {
     Absent,
     OurLink(ItemRef),
@@ -45,19 +45,7 @@ pub fn classify(path: &Path, paths: &Paths) -> Result<TargetClass, Error> {
     };
     if metadata.is_symlink() {
         let target = fs::read_link(path)?;
-        let absolute = if target.is_absolute() {
-            target.clone()
-        } else {
-            path.parent().unwrap_or(Path::new(".")).join(&target)
-        };
-        let resolved = resolve_link_path(&absolute)?;
-        let library = resolve_link_path(&paths.library)?;
-        if let Ok(relative) = resolved.strip_prefix(library)
-            && let Some(item) = item_ref(relative)
-        {
-            return Ok(TargetClass::OurLink(item));
-        }
-        return Ok(TargetClass::ForeignLink(target));
+        return classify_link(path, &target, paths);
     }
     if metadata.is_dir() {
         Ok(TargetClass::RealDir)
@@ -70,6 +58,26 @@ pub fn classify(path: &Path, paths: &Paths) -> Result<TargetClass, Error> {
         )
         .into())
     }
+}
+
+pub(crate) fn classify_link(
+    path: &Path,
+    target: &Path,
+    paths: &Paths,
+) -> Result<TargetClass, Error> {
+    let absolute = if target.is_absolute() {
+        target.to_owned()
+    } else {
+        path.parent().unwrap_or(Path::new(".")).join(target)
+    };
+    let resolved = resolve_link_path(&absolute)?;
+    let library = resolve_link_path(&paths.library)?;
+    if let Ok(relative) = resolved.strip_prefix(library)
+        && let Some(item) = item_ref(relative)
+    {
+        return Ok(TargetClass::OurLink(item));
+    }
+    Ok(TargetClass::ForeignLink(target.to_owned()))
 }
 
 fn item_ref(relative: &Path) -> Option<ItemRef> {
