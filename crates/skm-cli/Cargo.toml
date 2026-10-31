@@ -1,0 +1,16 @@
+[package]
+name = "skm-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "skm"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+skm-core = { path = "../skm-core" }
+
+[dev-dependencies]
+tempfile.workspace = true

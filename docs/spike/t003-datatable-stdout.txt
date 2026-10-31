@@ -1,0 +1,6 @@
+datatable: 646 intervals; aggregate fps=80.961; instantaneous fps avg=107.661 p50=119.974 p95=130.588 p99=151.794 max=212.851
+frame interval ms avg=12.352 p50=8.335 p95=41.609 p99=41.695 max=41.774
+filter rows ready ms avg=0.078 p50=0.087 p95=0.134 p99=0.137 max=0.137
+filter next-frame callback ms avg=32.871 p50=40.648 p95=41.541 p99=41.620 max=41.620 (NOT presentation timestamps)
+filter CPU paint marker ms avg=2.346 p50=2.180 p95=3.358 p99=5.950 max=5.950 (NOT GPU presentation)
+DONE: window left open for screenshot

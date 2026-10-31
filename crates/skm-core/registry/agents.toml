@@ -1,0 +1,53 @@
+[agents.claude-code]
+name = "Claude Code"
+detect = ["~/.claude", "bin:claude"]
+config_dir_env = "CLAUDE_CONFIG_DIR"
+config_dir = "~/.claude"
+skills = { reads_universal = false, user = "~/.agents/skills", project = ".agents/skills", note = "reads only ~/.claude/skills (https://github.com/anthropics/claude-code/issues/31005, https://github.com/anthropics/claude-code/issues/16345)" }
+mcp = { dialect = "claude", user = { file = "~/.claude.json", config_dir_file = ".claude.json", format = "json", key = "mcpServers", write_via = "cli" }, project = { file = ".mcp.json", format = "json", key = "mcpServers", also_read_by = ["copilot-cli"], trust = "Approve project servers in Claude" } }
+hooks = { dialect = "claude", user = { file = "~/.claude/settings.json", key = "hooks" }, project = { file = ".claude/settings.json", key = "hooks" } }
+subagents = { format = "md-claude", user = "~/.claude/agents", project = ".claude/agents", also_read_by = ["cursor"] }
+plugins = { driver = "claude-cli" }
+
+[agents.codex]
+name = "Codex"
+detect = ["~/.codex", "bin:codex"]
+skills = { reads_universal = true, user = "~/.agents/skills", project = ".agents/skills" }
+mcp = { dialect = "codex", user = { file = "~/.codex/config.toml", format = "toml", key = "mcp_servers" }, project = { file = ".codex/config.toml", format = "toml", key = "mcp_servers", trust = "Trust the project in Codex" } }
+hooks = { dialect = "claude", requires = "features.hooks", user = { file = "~/.codex/hooks.json", key = "hooks" }, project = { file = ".codex/hooks.json", key = "hooks", trust = "Trust the project and review per-hook trust" } }
+subagents = { format = "toml-codex", user = "~/.codex/agents", project = ".codex/agents", also_read_by = ["cursor"] }
+plugins = { driver = "codex-cli" }
+
+[agents.cursor]
+name = "Cursor"
+detect = ["~/.cursor", "bin:cursor"]
+skills = { reads_universal = true, user = "~/.agents/skills", project = ".agents/skills" }
+mcp = { dialect = "cursor", user = { file = "~/.cursor/mcp.json", format = "json", key = "mcpServers" }, project = { file = ".cursor/mcp.json", format = "json", key = "mcpServers" } }
+hooks = { dialect = "cursor", user = { file = "~/.cursor/hooks.json", key = "hooks" }, project = { file = ".cursor/hooks.json", key = "hooks" } }
+subagents = { format = "md-cursor", user = "~/.cursor/agents", project = ".cursor/agents" }
+plugins = { driver = "cursor-read-only" }
+
+[agents.gemini-cli]
+name = "Gemini CLI"
+detect = ["~/.gemini", "bin:gemini"]
+skills = { reads_universal = true, user = "~/.agents/skills", project = ".agents/skills" }
+mcp = { dialect = "gemini", user = { file = "~/.gemini/settings.json", format = "json", key = "mcpServers" }, project = { file = ".gemini/settings.json", format = "json", key = "mcpServers", trust = "Trust the folder in Gemini" } }
+hooks = { dialect = "gemini", user = { file = "~/.gemini/settings.json", key = "hooks" }, project = { file = ".gemini/settings.json", key = "hooks", trust = "Trust the folder in Gemini" } }
+subagents = { format = "md-gemini", user = "~/.gemini/agents", project = ".gemini/agents" }
+
+[agents.opencode]
+name = "OpenCode"
+detect = ["~/.config/opencode", "bin:opencode"]
+skills = { reads_universal = true, user = "~/.agents/skills", project = ".agents/skills" }
+mcp = { dialect = "opencode", user = { file = "~/.config/opencode/opencode.json", format = "jsonc", key = "mcp" }, project = { file = "opencode.json", format = "jsonc", key = "mcp" } }
+subagents = { format = "md-opencode", user = "~/.config/opencode/agents", project = ".opencode/agents" }
+
+[agents.copilot-cli]
+name = "GitHub Copilot CLI"
+detect = ["~/.copilot", "bin:copilot"]
+config_dir_env = "COPILOT_HOME"
+config_dir = "~/.copilot"
+skills = { reads_universal = true, user = "~/.agents/skills", project = ".agents/skills" }
+mcp = { dialect = "copilot", user = { file = "~/.copilot/mcp-config.json", format = "json", key = "mcpServers" }, project = { file = ".github/mcp.json", format = "json", key = "mcpServers", trust = "Trust the folder in Copilot" } }
+hooks = { dialect = "copilot", user = { file = "~/.copilot/hooks/skillsmgr.json", format = "json", key = "hooks" }, project = { file = ".github/hooks/skillsmgr.json", format = "json", key = "hooks" } }
+subagents = { format = "md-copilot", user = "~/.copilot/agents", project = ".github/agents" }

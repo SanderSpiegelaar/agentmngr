@@ -1,0 +1,9 @@
+display=1 main=1 builtin=1 bounds=(0.0, 0.0, 1800.0, 1169.0) refresh_hz=120.0
+display=2 main=0 builtin=0 bounds=(-2972.0, -2160.0, 3840.0, 2160.0) refresh_hz=144.0
+display=4 main=0 builtin=0 bounds=(868.0, -2183.0, 3840.0, 2160.0) refresh_hz=144.0
+window=3280 owner=matrix_spike title=T-003 Matrix Spike bounds={
+    Height = 1129;
+    Width = 600;
+    X = 600;
+    Y = 39;
+}
