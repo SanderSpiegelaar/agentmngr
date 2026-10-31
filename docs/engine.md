@@ -1,5 +1,24 @@
 # Engine API (T-017)
 
+## System Git (T-023)
+
+`git::GitRunner::new(timeout)` checks system Git >=2.30. `with_binary(path, timeout)`
+injects an executable for tests. Commands disable terminal prompts, capture stderr,
+and enforce the timeout, including output collection. Auth failures return
+`E_GIT_AUTH`; transport failures and timeouts return `E_NETWORK`; missing or old
+Git returns `E_GIT_MISSING`. Other command failures return `E_IO` with stderr.
+These synchronous methods belong on worker threads, not the GUI thread.
+
+`clone_bare(url, destination, optional_branch)` uses a shallow blobless bare clone.
+`bare(path)` reopens only bare repositories. `BareRepository` exposes `fetch`,
+`ls_tree`, `rev_parse`, and `archive` (tar bytes). Fetch callers resolve
+`FETCH_HEAD` for the fetched revision. `project(path)` returns `ProjectRepository`
+with only `ls_files` (repository-relative paths) and `exclude_path` (absolute,
+worktree-aware). Neither handle exposes arbitrary commands, add, or commit.
+Tree and tracked-path lists use NUL delimiters and preserve Unix filename bytes.
+
+## Reconciliation
+
 `engine::observe(&paths, &store, &targets)` reads exact target fingerprints and
 whole-path ledger rows. `engine::plan(scope_id, &desired, &observations)` is pure:
 only explicitly supplied targets are reconciled. Request `DesiredContent::Absent`

@@ -9,7 +9,7 @@
 | `E_CONFIG_PARSE` | Configuration could not be parsed. | Fix the config syntax before retrying; the file was not changed. |
 | `E_CONFIG_CHANGED` | Configuration changed after planning. | Reload the config and create a new plan before applying. |
 | `E_GIT_AUTH` | Git authentication or authorization failed. | Check your Git credentials and repository access. |
-| `E_GIT_MISSING` | Git is unavailable. | Install Git and make it available on PATH. |
+| `E_GIT_MISSING` | Git is unavailable or older than 2.30. | Install Git >=2.30 with Xcode Command Line Tools (`xcode-select --install`) and make it available on PATH. |
 | `E_NETWORK` | A network request failed. | Check your connection and retry. |
 | `E_LOCKED` | Another process holds the apply lock. | Wait for the other apply operation to finish and retry. |
 | `E_INVALID_SKILL` | Skill metadata or contents are invalid. | Fix the skill metadata or contents and retry. |
