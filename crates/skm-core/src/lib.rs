@@ -4,6 +4,7 @@ pub mod engine;
 pub mod error;
 pub mod events;
 pub mod frontmatter;
+pub mod global_skills;
 pub mod indexer;
 pub mod library;
 pub mod logging;

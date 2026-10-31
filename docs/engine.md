@@ -56,3 +56,25 @@ T-020 must introduce explicit, snapshot-bound adoption authorization;
 `approve_modified` deliberately cannot authorize foreign targets. Undo acceptance
 tests exercise adoption's copy/replace/link effects with a ledger-owned original
 directory until that authorization exists.
+
+## Global skills (T-019)
+
+`global_skills::set_global_skill(&paths, &store, user_home, name, on)` saves
+`library.toml` through `library::Library`, using this engine to observe, plan and
+apply the global skills links. It returns `ApplyResult`, including
+refusal issues and failures. Desired state is retained when a target refuses or
+apply fails; saving desired state and applying are not one transaction.
+
+`global_skills::plan_global_skill` takes the same arguments and returns the same
+reconciliation plan without saving or applying. On first run its scope id is 0,
+for preview only; `set_global_skill` creates the real global scope. Both reconcile
+the selected global skills plus the requested off target, not unrelated entries.
+Only absent paths and `OurLink` entries are eligible, even if a real copy has a
+ledger row. Missing on-skill directories and unsafe names return `E_INVALID_SKILL`.
+
+`Paths::global_skills(user_home)` resolves the injected, existing user home to
+`<home>/.agents/skills`. Symlinked descendants are refused by the engine. No agent
+registry target or agent-specific skills directory is used. `skm on <skill>` and
+`skm off <skill>` call the core API; `--dry-run` prints the plan and issues, and
+refusals exit 3. CLI initialization may still create the manager layout, logs and
+SQLite database during a dry run, but does not save desired state or apply links.

@@ -10,6 +10,8 @@ use skm_core::paths::Paths;
 struct Cli {
     #[arg(long, global = true)]
     home: Option<PathBuf>,
+    #[arg(long, global = true)]
+    dry_run: bool,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -30,6 +32,10 @@ enum Command {
         #[arg(long)]
         list: bool,
     },
+    /// Enable a skill globally.
+    On { skill: String },
+    /// Disable a skill globally.
+    Off { skill: String },
 }
 
 fn main() -> Result<(), skm_core::Error> {
@@ -74,6 +80,41 @@ fn main() -> Result<(), skm_core::Error> {
                 if !result.issues.is_empty() || !result.failed.is_empty() {
                     std::process::exit(3);
                 }
+            }
+        }
+        Some(Command::On { ref skill }) | Some(Command::Off { ref skill }) => {
+            let on = matches!(cli.command, Some(Command::On { .. }));
+            let home = user_home.ok_or_else(|| std::io::Error::other("HOME is unavailable"))?;
+            let store = skm_core::store::Store::open(&paths)?;
+            let issues = if cli.dry_run {
+                let plan =
+                    skm_core::global_skills::plan_global_skill(&paths, &store, &home, skill, on)?;
+                println!("{}", plan.summary);
+                for action in &plan.actions {
+                    println!("{:?}", action.action);
+                }
+                plan.issues
+            } else {
+                let result =
+                    skm_core::global_skills::set_global_skill(&paths, &store, &home, skill, on)?;
+                println!(
+                    "{} actions, {} issues, {} failed",
+                    result.done.len(),
+                    result.issues.len(),
+                    result.failed.len()
+                );
+                result.issues.into_iter().chain(result.failed).collect()
+            };
+            for issue in &issues {
+                eprintln!(
+                    "{}: {}: {}",
+                    issue.code,
+                    issue.target.display(),
+                    issue.message
+                );
+            }
+            if !issues.is_empty() {
+                std::process::exit(3);
             }
         }
         Some(Command::Agents) => {
