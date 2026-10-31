@@ -8,6 +8,7 @@ use crate::{Error, paths::Paths};
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_initial.sql"),
     include_str!("../migrations/002_item_file_stamps.sql"),
+    include_str!("../migrations/003_project_sync.sql"),
 ];
 type WriteCommand = Box<dyn FnOnce(&mut Connection) + Send>;
 

@@ -330,3 +330,34 @@ empty manager-owned lock disappears. Copy mode recreates the lock and removes
 the exclude block. Metadata actions require successful skill changes and refuse
 stale file snapshots. Edited copies refuse the whole plan. No mode changes Git's
 index, so switching previously tracked copies still shows working-tree changes.
+## Project auto-sync (T-028)
+
+`projects::sync::sync_change(paths, store, library, registry, &Change)` handles
+`Change::Items` (watcher/index decimal IDs) or `Change::Set` (a saved set edit).
+It reconciles each affected project independently through `plan_project` and
+engine apply, recording an undoable operation per auto-apply. `SyncOutcome`
+preserves per-project pending counts, planning refusals, apply results and errors.
+Callers must inspect apply issues and failures. Edited copies refuse with
+`E_PROJECT_EDITED`; other projects still sync. Unknown/deleted IDs conservatively
+reconcile all projects because their former names are no longer indexed.
+
+`pause` uses the existing `auto_sync` flag. `pending_count` counts distinct pending
+item IDs/set names, not individual filesystem events; repeated changes coalesce.
+Pending state survives restart and is retained on refusal/failure. `resume`
+reconciles current desired state, clearing only successfully processed revisions.
+
+`edited_copy` captures a review-bound observation. Pass it to `overwrite`,
+`pull_into_library`, or `keep`; stale reviews refuse. `overwrite` first journals a
+ledger-only baseline claim, then a separate copy/lock operation whose undo restores
+the edited copy and old lock. It returns both apply results. `pull_into_library`
+journals the import and baseline claim together; subsequent sync updates locks
+and other projects. `keep` leaves the copy untouched and pauses that project.
+
+`run_watcher_sync` blocks on a caller-owned `Receiver<CoreEvent>` until disconnect,
+with no timers. Run it on a worker thread and tee watcher `ItemsChanged` events
+into its input. Each batch reloads `library.toml` and sends
+`Result<Vec<SyncOutcome>, Error>` on a separate results channel. Other core events
+are ignored here and belong to the application's bridge. For external set edits,
+subscribe `library/library.toml` as a `WatchedTarget` with a non-index ID such as
+`library-manifest`, so manifest-only edits also emit `ItemsChanged`. In-process
+set editors can call `sync_change(Change::Set(name))` directly after saving.

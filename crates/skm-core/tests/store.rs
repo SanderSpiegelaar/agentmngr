@@ -13,7 +13,7 @@ fn migrations_from_zero_are_idempotent_and_match_spec() -> Result<(), Error> {
     store.read(|connection| {
         assert_eq!(
             connection.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))?,
-            2
+            3
         );
         assert_eq!(
             connection.pragma_query_value(None, "journal_mode", |row| row.get::<_, String>(0))?,
@@ -24,7 +24,7 @@ fn migrations_from_zero_are_idempotent_and_match_spec() -> Result<(), Error> {
             [],
             |row| row.get(0),
         )?;
-        assert_eq!(tables, 9);
+        assert_eq!(tables, 10);
         assert!(connection.execute("DELETE FROM scopes", []).is_err());
         Ok(())
     })?;
@@ -58,7 +58,7 @@ fn migrations_from_zero_are_idempotent_and_match_spec() -> Result<(), Error> {
         Ok(())
     })?;
     println!(
-        "schema v2: nine tables, copy/auto_sync defaults, multi-kind items, lock/exclude, WAL, foreign keys; reopen preserves rows"
+        "schema v3: ten tables, copy/auto_sync defaults, multi-kind items, lock/exclude, WAL, foreign keys; reopen preserves rows"
     );
     Ok(())
 }
@@ -140,7 +140,7 @@ fn deleted_database_is_recreated_on_next_open() -> Result<(), Error> {
     store.read(|connection| {
         assert_eq!(
             connection.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))?,
-            2
+            3
         );
         assert_eq!(
             connection.query_row("SELECT count(*) FROM items", [], |row| row.get::<_, i64>(0))?,
@@ -148,7 +148,7 @@ fn deleted_database_is_recreated_on_next_open() -> Result<(), Error> {
         );
         Ok(())
     })?;
-    println!("deleted state.db recreated with schema v2 on next open");
+    println!("deleted state.db recreated with schema v3 on next open");
     Ok(())
 }
 
