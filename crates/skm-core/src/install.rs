@@ -234,18 +234,19 @@ pub fn preview(paths: &Paths, git: &GitRunner, source: &Source) -> Result<Previe
             }
         })?;
         let mirror = mirrors.join(key);
-        let (repository, revision) = if mirror.exists() {
-            let repository = git.bare(&mirror)?;
-            repository.fetch(reference.as_deref())?;
-            let revision = repository.rev_parse("FETCH_HEAD")?;
-            (repository, revision)
-        } else {
+        let fresh = !mirror.exists();
+        if fresh {
             let temporary = tempfile::tempdir_in(&mirrors)?;
-            git.clone_bare(&url, &temporary.path().join("mirror"), reference.as_deref())?;
+            git.clone_bare(&url, &temporary.path().join("mirror"))?;
             fs::rename(temporary.path().join("mirror"), &mirror)?;
-            let repository = git.bare(&mirror)?;
-            let revision = repository.rev_parse("HEAD")?;
-            (repository, revision)
+        }
+        let repository = git.bare(&mirror)?;
+        // `clone --branch` rejects commit SHAs; fetch accepts branches, tags and SHAs.
+        let revision = if fresh && reference.is_none() {
+            repository.rev_parse("HEAD")?
+        } else {
+            repository.fetch(reference.as_deref())?;
+            repository.rev_parse("FETCH_HEAD")?
         };
         for (index, file) in repository.ls_tree(&revision)?.into_iter().enumerate() {
             if file.file_name().is_none_or(|name| name != "SKILL.md") {

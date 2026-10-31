@@ -80,7 +80,11 @@ impl Fixture {
             let end = suffix.find('/').unwrap();
             text.replace_range(start + 6..start + 6 + end, "<preview>");
         }
-        text
+        // The inotify check exists only on Linux and reports the host's limit; see `readable`.
+        text.lines()
+            .filter(|line| !line.starts_with("ok inotify:"))
+            .map(|line| format!("{line}\n"))
+            .collect()
     }
 
     fn comparable(&self, bytes: &[u8], json: bool) -> String {
@@ -106,6 +110,7 @@ impl Fixture {
                     }
                 }
                 Value::Array(values) => {
+                    values.retain(|value| value["id"] != "inotify");
                     for value in values {
                         readable(value);
                     }

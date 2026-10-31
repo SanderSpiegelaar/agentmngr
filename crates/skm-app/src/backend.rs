@@ -13,8 +13,13 @@ use skm_core::{
     Error, engine,
     events::CoreEvent,
     indexer,
+    library::Library,
     paths::Paths,
-    projects,
+    projects::{
+        self,
+        sync::{self, Change, SyncOutcome},
+    },
+    registry::Registry,
     store::Store,
     watcher::{BatchIndexer, WatchRoot, Watcher},
 };
@@ -83,6 +88,7 @@ pub fn run(
         let mut paths = Paths::resolve(None, manager_home.as_deref(), user_home.as_deref())?;
         paths.ensure_layout()?;
         let store = Arc::new(Store::open(&paths)?);
+        let registry = Registry::load()?;
         let snapshot = load(&store)?;
         let mut roots = vec![
             WatchRoot::Tree(paths.library.clone()),
@@ -134,6 +140,11 @@ pub fn run(
             }
             let update = match event {
                 CoreEvent::ItemsChanged { ids } => {
+                    for error in sync_projects(&paths, &store, &registry, ids.clone()) {
+                        if updates.send(Update::Error(error)).is_err() {
+                            return Ok(());
+                        }
+                    }
                     let ids: BTreeSet<_> =
                         ids.iter().filter_map(|id| id.parse::<i64>().ok()).collect();
                     let rows = indexer::load(&store)?
@@ -160,6 +171,40 @@ pub fn run(
 impl Shutdown {
     pub fn stopped(&self) -> Arc<AtomicBool> {
         self.stopped.clone()
+    }
+}
+
+/// Library edits propagate to auto-synced projects; returns problems to surface.
+fn sync_projects(
+    paths: &Paths,
+    store: &Store,
+    registry: &Registry,
+    ids: Vec<String>,
+) -> Vec<String> {
+    let known: Vec<_> = registry.agents.keys().map(String::as_str).collect();
+    let outcomes = Library::load(&paths.library.join("library.toml"), &known).and_then(|library| {
+        sync::sync_change(paths, store, &library, registry, &Change::Items(ids))
+    });
+    match outcomes {
+        Ok(outcomes) => outcomes
+            .into_iter()
+            .filter_map(|outcome| match outcome {
+                SyncOutcome::Refused { project_id, issues } => Some(format!(
+                    "project {project_id}: {}",
+                    issues
+                        .iter()
+                        .map(|issue| issue.message.as_str())
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                )),
+                SyncOutcome::Failed { project_id, error } => {
+                    Some(format!("project {project_id}: {}: {error}", error.code()))
+                }
+                SyncOutcome::Pending { .. } | SyncOutcome::Applied { .. } => None,
+            })
+            .collect(),
+        Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => vec![],
+        Err(error) => vec![format!("{}: {error}", error.code())],
     }
 }
 
@@ -220,6 +265,78 @@ mod tests {
         assert_eq!(snapshot.sets, ["work"]);
         assert_eq!(snapshot.activity[0].summary, "Enabled rust");
         assert!(!paths.library.exists());
+    }
+
+    #[test]
+    fn library_edit_while_running_rewrites_auto_synced_project_copy() {
+        use skm_core::library::{ItemSelection, ItemSet};
+        let root = tempfile::tempdir().unwrap();
+        let user_home = root.path().join("user");
+        fs::create_dir(&user_home).unwrap();
+        let mut paths = Paths::resolve(Some(&root.path().join("manager")), None, None).unwrap();
+        paths.ensure_layout().unwrap();
+        let store = Store::open(&paths).unwrap();
+        let registry = Registry::load().unwrap();
+        skill(&paths, "alpha", "Alpha");
+        indexer::catch_up(&store, &paths, None).unwrap();
+        let mut library = Library::default();
+        library.sets.insert(
+            "team".into(),
+            ItemSet {
+                items: ItemSelection {
+                    skills: vec!["alpha".into()],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        library
+            .save(&paths.library.join("library.toml"), &[])
+            .unwrap();
+        let project_path = root.path().join("project");
+        fs::create_dir(&project_path).unwrap();
+        let project = projects::register(&store, &project_path).unwrap();
+        projects::use_set(&store, &library, project.id, "team").unwrap();
+        projects::apply_project(&paths, &store, &project, &library, &registry, "test", None)
+            .unwrap();
+        drop(store);
+
+        let guard = CoreThread::new();
+        let (shutdown, receiver, events) = channel();
+        let stopped = shutdown.stopped();
+        let (updates, incoming) = mpsc::channel();
+        let manager_home = paths.home.clone();
+        let worker = thread::spawn(move || {
+            run(
+                guard,
+                stopped,
+                events,
+                receiver,
+                updates,
+                Some(manager_home),
+                Some(user_home),
+            )
+        });
+        assert!(matches!(
+            incoming.recv_timeout(Duration::from_secs(10)).unwrap(),
+            Update::Loaded(_)
+        ));
+        assert!(matches!(
+            incoming.recv_timeout(Duration::from_secs(10)).unwrap(),
+            Update::Items(_)
+        ));
+        skill(&paths, "alpha", "Updated Alpha");
+        let copy = project_path.join(".agents/skills/alpha/SKILL.md");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !fs::read_to_string(&copy).unwrap().contains("Updated Alpha") {
+            match incoming.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                Ok(Update::Error(error)) => panic!("{error}"),
+                Ok(_) => {}
+                Err(error) => panic!("project copy was not rewritten: {error}"),
+            }
+        }
+        drop(shutdown);
+        worker.join().unwrap();
     }
 
     #[test]
