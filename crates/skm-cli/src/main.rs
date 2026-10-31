@@ -18,16 +18,18 @@ enum Command {
     Doctor,
 }
 
-fn main() -> std::io::Result<()> {
+fn main() -> Result<(), skm_core::Error> {
     let cli = Cli::parse();
+    let env_home = std::env::var_os("SKILLSMGR_HOME").map(PathBuf::from);
+    let user_home = std::env::home_dir();
+    let paths = Paths::resolve(
+        cli.home.as_deref(),
+        env_home.as_deref(),
+        user_home.as_deref(),
+    )?;
+    paths.ensure_layout()?;
+    let _logging = skm_core::logging::init_logging(&paths.logs)?;
     if let Some(Command::Doctor) = cli.command {
-        let env_home = std::env::var_os("SKILLSMGR_HOME").map(PathBuf::from);
-        let user_home = std::env::home_dir();
-        let paths = Paths::resolve(
-            cli.home.as_deref(),
-            env_home.as_deref(),
-            user_home.as_deref(),
-        )?;
         for (name, path) in [
             ("home", &paths.home),
             ("library", &paths.library),

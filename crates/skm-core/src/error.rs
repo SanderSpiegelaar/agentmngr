@@ -28,6 +28,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Logging(String),
+    #[error("{0}")]
+    Database(String),
 }
 
 impl Error {
@@ -47,6 +49,7 @@ impl Error {
             Self::ProjectEdited(_) => "E_PROJECT_EDITED",
             Self::Io(_) => "E_IO",
             Self::Logging(_) => "E_LOGGING",
+            Self::Database(_) => "E_DATABASE",
         }
     }
 
@@ -72,7 +75,16 @@ impl Error {
             }
             Self::Io(_) => "Check the path, permissions, and available disk space.",
             Self::Logging(_) => "Check the logs directory and initialize logging only once.",
+            Self::Database(_) => {
+                "Check the database path and schema version, then reopen the store."
+            }
         }
+    }
+}
+
+impl From<rusqlite::Error> for Error {
+    fn from(error: rusqlite::Error) -> Self {
+        Self::Database(error.to_string())
     }
 }
 
@@ -100,6 +112,7 @@ mod tests {
             (Error::ProjectEdited("project".into()), "E_PROJECT_EDITED"),
             (std::io::Error::other("disk").into(), "E_IO"),
             (Error::Logging("logger".into()), "E_LOGGING"),
+            (Error::Database("database".into()), "E_DATABASE"),
         ];
         let docs = include_str!("../../../docs/errors.md");
         for (error, code) in cases {
