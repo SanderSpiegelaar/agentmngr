@@ -61,7 +61,9 @@ impl Fixture {
                 );
             } else {
                 assert!(text.contains(&format!("{status} {id}:")), "{text}");
-                assert!(text.contains(hint), "{text}");
+                if status != "ok" {
+                    assert!(text.contains(hint), "{text}");
+                }
                 assert!(text.contains(detail), "{text}");
             }
         }
@@ -132,7 +134,7 @@ fn doctor_missing_and_old_git_report_install_hint() {
                 "{output:?}"
             );
             let text = String::from_utf8(output.stdout).unwrap();
-            assert!(text.contains("Install Git >=2.30"), "{text}");
+            assert_eq!(text.contains("Install Git >=2.30"), json || !good, "{text}");
             if json {
                 let value: serde_json::Value = serde_json::from_str(&text).unwrap();
                 assert_eq!(

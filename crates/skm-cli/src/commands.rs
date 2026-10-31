@@ -894,13 +894,10 @@ pub fn doctor(
             println!("{name}: {}", path.display());
         }
         for check in checks {
-            println!(
-                "{} {}: {}\n  fix: {}",
-                check.status.as_str(),
-                check.id,
-                check.message,
-                check.fix
-            );
+            println!("{} {}: {}", check.status.as_str(), check.id, check.message);
+            if !matches!(check.status, crate::doctor::Status::Ok) {
+                println!("  fix: {}", check.fix);
+            }
         }
         if let Some(bundle) = bundle {
             println!("bundle: {}", bundle.display());

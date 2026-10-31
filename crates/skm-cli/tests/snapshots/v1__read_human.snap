@@ -38,16 +38,9 @@ config: <ROOT>/manager/config.toml
 db: <ROOT>/manager/state.db
 lock: <ROOT>/manager/lock
 ok git: Passed
-  fix: Install Git >=2.30 and put it on PATH (macOS: xcode-select --install).
 ok data-dir: Passed
-  fix: Make the data directory writable or select another directory with --home.
 ok registry: Passed
-  fix: Fix agent IDs and relative project paths in config.toml registry overrides.
 ok broken-links: Passed
-  fix: Restore missing link destinations or remove the broken skill links, then run skm on again.
 ok agent-configs: Passed
-  fix: Fix the syntax in the listed agent config files; doctor does not modify them.
 ok foreign-conflicts: Passed
-  fix: Review unmanaged skills; use skm adopt or move conflicting entries aside before enabling skills.
 ok edited-projects: Passed
-  fix: Review Edited project skills and preserve local changes before running skm project resume <path>.

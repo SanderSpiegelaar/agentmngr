@@ -66,24 +66,19 @@ impl GitRunner {
         Ok(runner)
     }
 
-    pub fn clone_bare(
-        &self,
-        url: &str,
-        destination: &Path,
-        revision: Option<&str>,
-    ) -> Result<BareRepository, Error> {
-        let mut args: Vec<OsString> = ["clone", "--bare", "--filter=blob:none", "--depth", "1"]
-            .map(Into::into)
-            .into();
-        if let Some(revision) = revision {
-            args.extend([OsString::from("--branch"), revision.into()]);
-        }
-        args.extend([
-            OsString::from("--"),
-            url.into(),
-            destination.as_os_str().to_owned(),
-        ]);
-        self.run(None, &args)?;
+    /// Clones the remote HEAD. Use `BareRepository::fetch` for other branches, tags or SHAs.
+    pub fn clone_bare(&self, url: &str, destination: &Path) -> Result<BareRepository, Error> {
+        let args: [&OsStr; 8] = [
+            "clone".as_ref(),
+            "--bare".as_ref(),
+            "--filter=blob:none".as_ref(),
+            "--depth".as_ref(),
+            "1".as_ref(),
+            "--".as_ref(),
+            url.as_ref(),
+            destination.as_os_str(),
+        ];
+        self.run(None, args)?;
         self.bare(destination)
     }
 
@@ -385,11 +380,7 @@ mod tests {
         let runner = GitRunner::new(Duration::from_secs(10)).unwrap();
         let destination = root.path().join("cache.git");
         let repo = runner
-            .clone_bare(
-                &format!("file://{}", remote.display()),
-                &destination,
-                Some("main"),
-            )
+            .clone_bare(&format!("file://{}", remote.display()), &destination)
             .unwrap();
         assert_eq!(
             git(&destination, &["rev-parse", "--is-shallow-repository"]),

@@ -407,3 +407,29 @@ fn local_preview_rejects_source_containing_its_own_staging_directory() {
     .unwrap_err();
     assert_eq!(error.code(), "E_INVALID_SKILL");
 }
+
+#[cfg(unix)]
+#[test]
+fn commit_sha_reference_previews_that_commit_not_the_branch_tip() {
+    let root = tempfile::tempdir().unwrap();
+    let (paths, _store, git) = setup(root.path());
+    let mut source = fixture(root.path());
+    let pinned = Command::new("git")
+        .current_dir(root.path().join("repo"))
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    let pinned = String::from_utf8(pinned.stdout).unwrap().trim().to_owned();
+    skill(&root.path().join("repo/skills"), "delta");
+    git_commit(root.path());
+    if let Source::Git { reference, .. } = &mut source {
+        *reference = Some(pinned.clone());
+    }
+    let preview = install::preview(&paths, &git, &source).unwrap();
+    let names: Vec<_> = preview
+        .skills()
+        .iter()
+        .map(|skill| skill.name.as_str())
+        .collect();
+    assert_eq!(names, ["alpha", "beta", "gamma"]);
+}

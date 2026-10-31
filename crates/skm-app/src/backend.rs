@@ -13,8 +13,13 @@ use skm_core::{
     Error, engine,
     events::CoreEvent,
     indexer,
+    library::Library,
     paths::Paths,
-    projects,
+    projects::{
+        self,
+        sync::{self, Change, SyncOutcome},
+    },
+    registry::Registry,
     store::Store,
     watcher::{BatchIndexer, WatchRoot, Watcher},
 };
@@ -83,6 +88,7 @@ pub fn run(
         let mut paths = Paths::resolve(None, manager_home.as_deref(), user_home.as_deref())?;
         paths.ensure_layout()?;
         let store = Arc::new(Store::open(&paths)?);
+        let registry = Registry::load()?;
         let snapshot = load(&store)?;
         let mut roots = vec![
             WatchRoot::Tree(paths.library.clone()),
@@ -117,6 +123,13 @@ pub fn run(
             .filter(|id| before.get(id) != after.get(id))
             .copied()
             .collect();
+        // Library edits made while the app was closed still reach auto-synced projects.
+        let changed = ids.iter().map(ToString::to_string).collect();
+        for error in sync_projects(&paths, &store, &registry, changed) {
+            if updates.send(Update::Error(error)).is_err() {
+                return Ok(());
+            }
+        }
         let rows = after
             .into_values()
             .filter(|row| ids.contains(&row.id))
@@ -134,6 +147,11 @@ pub fn run(
             }
             let update = match event {
                 CoreEvent::ItemsChanged { ids } => {
+                    for error in sync_projects(&paths, &store, &registry, ids.clone()) {
+                        if updates.send(Update::Error(error)).is_err() {
+                            return Ok(());
+                        }
+                    }
                     let ids: BTreeSet<_> =
                         ids.iter().filter_map(|id| id.parse::<i64>().ok()).collect();
                     let rows = indexer::load(&store)?
@@ -160,6 +178,54 @@ pub fn run(
 impl Shutdown {
     pub fn stopped(&self) -> Arc<AtomicBool> {
         self.stopped.clone()
+    }
+}
+
+/// Library edits propagate to auto-synced projects; returns problems to surface.
+fn sync_projects(
+    paths: &Paths,
+    store: &Store,
+    registry: &Registry,
+    ids: Vec<String>,
+) -> Vec<String> {
+    let known: Vec<_> = registry.agents.keys().map(String::as_str).collect();
+    let outcomes = Library::load(&paths.library.join("library.toml"), &known).and_then(|library| {
+        sync::sync_change(paths, store, &library, registry, &Change::Items(ids))
+    });
+    match outcomes {
+        Ok(outcomes) => outcomes
+            .into_iter()
+            .filter_map(|outcome| match outcome {
+                SyncOutcome::Refused { project_id, issues } => Some(format!(
+                    "project {project_id}: {}",
+                    issues
+                        .iter()
+                        .map(|issue| issue.message.as_str())
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                )),
+                SyncOutcome::Failed { project_id, error } => {
+                    Some(format!("project {project_id}: {}: {error}", error.code()))
+                }
+                SyncOutcome::Applied { project_id, result }
+                    if !result.issues.is_empty() || !result.failed.is_empty() =>
+                {
+                    Some(format!(
+                        "project {project_id}: {}",
+                        result
+                            .issues
+                            .iter()
+                            .chain(&result.failed)
+                            .map(|issue| issue.message.as_str())
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    ))
+                }
+                SyncOutcome::Pending { .. } | SyncOutcome::Applied { .. } => None,
+            })
+            .collect(),
+        Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => vec![],
+        Err(error) => vec![format!("{}: {error}", error.code())],
     }
 }
 
@@ -220,6 +286,118 @@ mod tests {
         assert_eq!(snapshot.sets, ["work"]);
         assert_eq!(snapshot.activity[0].summary, "Enabled rust");
         assert!(!paths.library.exists());
+    }
+
+    /// A library with skill `alpha` in set `team`, used by one applied copy-mode project.
+    fn synced_project(root: &std::path::Path) -> (Paths, PathBuf) {
+        use skm_core::library::{ItemSelection, ItemSet};
+        let mut paths = Paths::resolve(Some(&root.join("manager")), None, None).unwrap();
+        paths.ensure_layout().unwrap();
+        let store = Store::open(&paths).unwrap();
+        let registry = Registry::load().unwrap();
+        skill(&paths, "alpha", "Alpha");
+        indexer::catch_up(&store, &paths, None).unwrap();
+        let mut library = Library::default();
+        library.sets.insert(
+            "team".into(),
+            ItemSet {
+                items: ItemSelection {
+                    skills: vec!["alpha".into()],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        library
+            .save(&paths.library.join("library.toml"), &[])
+            .unwrap();
+        let project_path = root.join("project");
+        fs::create_dir(&project_path).unwrap();
+        let project = projects::register(&store, &project_path).unwrap();
+        projects::use_set(&store, &library, project.id, "team").unwrap();
+        projects::apply_project(&paths, &store, &project, &library, &registry, "test", None)
+            .unwrap();
+        (paths, project_path)
+    }
+
+    fn start(
+        paths: &Paths,
+        user_home: PathBuf,
+    ) -> (Shutdown, mpsc::Receiver<Update>, thread::JoinHandle<()>) {
+        let guard = CoreThread::new();
+        let (shutdown, receiver, events) = channel();
+        let stopped = shutdown.stopped();
+        let (updates, incoming) = mpsc::channel();
+        let manager_home = paths.home.clone();
+        let worker = thread::spawn(move || {
+            run(
+                guard,
+                stopped,
+                events,
+                receiver,
+                updates,
+                Some(manager_home),
+                Some(user_home),
+            )
+        });
+        (shutdown, incoming, worker)
+    }
+
+    fn wait_for_copy(copy: &std::path::Path, text: &str, incoming: &mpsc::Receiver<Update>) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !fs::read_to_string(copy).unwrap().contains(text) {
+            match incoming.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                Ok(Update::Error(error)) => panic!("{error}"),
+                Ok(_) => {}
+                Err(error) => panic!("project copy was not rewritten: {error}"),
+            }
+        }
+    }
+
+    #[test]
+    fn library_edit_while_running_rewrites_auto_synced_project_copy() {
+        let root = tempfile::tempdir().unwrap();
+        let (paths, project) = synced_project(root.path());
+        let (shutdown, incoming, worker) = start(&paths, root.path().to_owned());
+        assert!(matches!(
+            incoming.recv_timeout(Duration::from_secs(10)).unwrap(),
+            Update::Loaded(_)
+        ));
+        assert!(matches!(
+            incoming.recv_timeout(Duration::from_secs(10)).unwrap(),
+            Update::Items(_)
+        ));
+        skill(&paths, "alpha", "Updated Alpha");
+        wait_for_copy(
+            &project.join(".agents/skills/alpha/SKILL.md"),
+            "Updated Alpha",
+            &incoming,
+        );
+        drop(shutdown);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn library_edit_while_closed_rewrites_project_copy_on_startup() {
+        let root = tempfile::tempdir().unwrap();
+        let (paths, project) = synced_project(root.path());
+        skill(&paths, "alpha", "Edited While Closed");
+        let (shutdown, incoming, worker) = start(&paths, root.path().to_owned());
+        let copy = project.join(".agents/skills/alpha/SKILL.md");
+        loop {
+            match incoming.recv_timeout(Duration::from_secs(10)).unwrap() {
+                Update::Items(_) => break,
+                Update::Error(error) => panic!("{error}"),
+                Update::Loaded(_) => {}
+            }
+        }
+        assert!(
+            fs::read_to_string(&copy)
+                .unwrap()
+                .contains("Edited While Closed")
+        );
+        drop(shutdown);
+        worker.join().unwrap();
     }
 
     #[test]
