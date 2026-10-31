@@ -3,3 +3,12 @@ name = "skm-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
