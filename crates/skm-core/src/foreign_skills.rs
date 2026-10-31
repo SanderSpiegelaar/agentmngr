@@ -19,7 +19,7 @@ use crate::{
     target::{ItemKind, ItemRef, TargetClass},
 };
 
-mod locks;
+pub(crate) mod locks;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForeignSkill {

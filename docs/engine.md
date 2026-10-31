@@ -252,6 +252,18 @@ separately from an explicit wildcard agent list.
 `unregister` forgets local selections and ownership while leaving files untouched;
 callers implementing `--clean` must plan and apply cleanup before unregistering.
 
+Registration reattaches same-name copy-mode skill trees whose exact engine hash
+matches the local library. Guarded `Claim` actions record ownership without
+changing repository files. Existing ledger fingerprints are never refreshed to
+hide edits. `projects::register_with_report(&store, path)` returns
+`Registration { project, reattachment }`; `ReattachResult::skills` maps names to
+`ProjectSkillState::{Attached, Edited, Foreign}`. Same-name mismatches are Edited;
+unknown names are Foreign. Unsafe paths and symlinks are never newly claimed.
+`suggested_sets` lists existing library sets whose nonempty skill membership is
+covered by v1 lock entries. Suggestions do not create sets or select memberships.
+Missing locks are optional; malformed locks refuse before registration. The usual
+`register` performs the same attachment and returns only the project.
+
 Set definitions remain solely in `Library::sets` in `library.toml`.
 `Library::{create_set, update_set, delete_set}` mutate that model; persist with
 `Library::save`. `ItemSelection::{set_item, remove_item, entries}` handle membership

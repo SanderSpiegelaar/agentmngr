@@ -21,6 +21,8 @@ mod copy;
 mod link;
 pub use copy::{apply_project, plan_copy_project, plan_project};
 pub use link::plan_link_project;
+mod reattach;
+pub use reattach::{ProjectSkillState, ReattachResult, Registration, register_with_report};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -52,6 +54,10 @@ pub struct DirectItem {
 }
 
 pub fn register(store: &Store, path: &Path) -> Result<Project, Error> {
+    Ok(register_with_report(store, path)?.project)
+}
+
+fn register_scope(store: &Store, path: &Path) -> Result<Project, Error> {
     let path = path.canonicalize()?;
     if !path.is_dir() {
         return Err(Error::ConfigParse(

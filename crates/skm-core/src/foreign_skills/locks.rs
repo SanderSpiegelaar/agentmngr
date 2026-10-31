@@ -25,7 +25,7 @@ struct Entry {
     installed_at: Option<String>,
 }
 
-pub(super) fn read(root: &Path, project: bool) -> Result<BTreeMap<String, SkillProvenance>, Error> {
+pub(crate) fn read(root: &Path, project: bool) -> Result<BTreeMap<String, SkillProvenance>, Error> {
     let path = root.join(if project {
         "skills-lock.json"
     } else {
