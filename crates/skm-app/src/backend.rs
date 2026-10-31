@@ -123,6 +123,13 @@ pub fn run(
             .filter(|id| before.get(id) != after.get(id))
             .copied()
             .collect();
+        // Library edits made while the app was closed still reach auto-synced projects.
+        let changed = ids.iter().map(ToString::to_string).collect();
+        for error in sync_projects(&paths, &store, &registry, changed) {
+            if updates.send(Update::Error(error)).is_err() {
+                return Ok(());
+            }
+        }
         let rows = after
             .into_values()
             .filter(|row| ids.contains(&row.id))
@@ -200,6 +207,20 @@ fn sync_projects(
                 SyncOutcome::Failed { project_id, error } => {
                     Some(format!("project {project_id}: {}: {error}", error.code()))
                 }
+                SyncOutcome::Applied { project_id, result }
+                    if !result.issues.is_empty() || !result.failed.is_empty() =>
+                {
+                    Some(format!(
+                        "project {project_id}: {}",
+                        result
+                            .issues
+                            .iter()
+                            .chain(&result.failed)
+                            .map(|issue| issue.message.as_str())
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    ))
+                }
                 SyncOutcome::Pending { .. } | SyncOutcome::Applied { .. } => None,
             })
             .collect(),
@@ -267,13 +288,10 @@ mod tests {
         assert!(!paths.library.exists());
     }
 
-    #[test]
-    fn library_edit_while_running_rewrites_auto_synced_project_copy() {
+    /// A library with skill `alpha` in set `team`, used by one applied copy-mode project.
+    fn synced_project(root: &std::path::Path) -> (Paths, PathBuf) {
         use skm_core::library::{ItemSelection, ItemSet};
-        let root = tempfile::tempdir().unwrap();
-        let user_home = root.path().join("user");
-        fs::create_dir(&user_home).unwrap();
-        let mut paths = Paths::resolve(Some(&root.path().join("manager")), None, None).unwrap();
+        let mut paths = Paths::resolve(Some(&root.join("manager")), None, None).unwrap();
         paths.ensure_layout().unwrap();
         let store = Store::open(&paths).unwrap();
         let registry = Registry::load().unwrap();
@@ -293,14 +311,19 @@ mod tests {
         library
             .save(&paths.library.join("library.toml"), &[])
             .unwrap();
-        let project_path = root.path().join("project");
+        let project_path = root.join("project");
         fs::create_dir(&project_path).unwrap();
         let project = projects::register(&store, &project_path).unwrap();
         projects::use_set(&store, &library, project.id, "team").unwrap();
         projects::apply_project(&paths, &store, &project, &library, &registry, "test", None)
             .unwrap();
-        drop(store);
+        (paths, project_path)
+    }
 
+    fn start(
+        paths: &Paths,
+        user_home: PathBuf,
+    ) -> (Shutdown, mpsc::Receiver<Update>, thread::JoinHandle<()>) {
         let guard = CoreThread::new();
         let (shutdown, receiver, events) = channel();
         let stopped = shutdown.stopped();
@@ -317,6 +340,25 @@ mod tests {
                 Some(user_home),
             )
         });
+        (shutdown, incoming, worker)
+    }
+
+    fn wait_for_copy(copy: &std::path::Path, text: &str, incoming: &mpsc::Receiver<Update>) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !fs::read_to_string(copy).unwrap().contains(text) {
+            match incoming.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                Ok(Update::Error(error)) => panic!("{error}"),
+                Ok(_) => {}
+                Err(error) => panic!("project copy was not rewritten: {error}"),
+            }
+        }
+    }
+
+    #[test]
+    fn library_edit_while_running_rewrites_auto_synced_project_copy() {
+        let root = tempfile::tempdir().unwrap();
+        let (paths, project) = synced_project(root.path());
+        let (shutdown, incoming, worker) = start(&paths, root.path().to_owned());
         assert!(matches!(
             incoming.recv_timeout(Duration::from_secs(10)).unwrap(),
             Update::Loaded(_)
@@ -326,15 +368,34 @@ mod tests {
             Update::Items(_)
         ));
         skill(&paths, "alpha", "Updated Alpha");
-        let copy = project_path.join(".agents/skills/alpha/SKILL.md");
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while !fs::read_to_string(&copy).unwrap().contains("Updated Alpha") {
-            match incoming.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-                Ok(Update::Error(error)) => panic!("{error}"),
-                Ok(_) => {}
-                Err(error) => panic!("project copy was not rewritten: {error}"),
+        wait_for_copy(
+            &project.join(".agents/skills/alpha/SKILL.md"),
+            "Updated Alpha",
+            &incoming,
+        );
+        drop(shutdown);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn library_edit_while_closed_rewrites_project_copy_on_startup() {
+        let root = tempfile::tempdir().unwrap();
+        let (paths, project) = synced_project(root.path());
+        skill(&paths, "alpha", "Edited While Closed");
+        let (shutdown, incoming, worker) = start(&paths, root.path().to_owned());
+        let copy = project.join(".agents/skills/alpha/SKILL.md");
+        loop {
+            match incoming.recv_timeout(Duration::from_secs(10)).unwrap() {
+                Update::Items(_) => break,
+                Update::Error(error) => panic!("{error}"),
+                Update::Loaded(_) => {}
             }
         }
+        assert!(
+            fs::read_to_string(&copy)
+                .unwrap()
+                .contains("Edited While Closed")
+        );
         drop(shutdown);
         worker.join().unwrap();
     }
