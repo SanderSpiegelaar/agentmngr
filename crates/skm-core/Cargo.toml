@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rusqlite.workspace = true
 icu_collator.workspace = true
 rayon.workspace = true
 sha2.workspace = true

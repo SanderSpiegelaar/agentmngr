@@ -19,6 +19,7 @@
 | `E_PROJECT_EDITED` | Project contents changed after planning. | Review the project edits and create a new plan before applying. |
 | `E_IO` | A filesystem operation failed. | Check the path, permissions, and available disk space. |
 | `E_LOGGING` | Log file or subscriber initialization failed. | Check the logs directory and initialize logging only once. |
+| `E_DATABASE` | Database access, migration, or writer communication failed. | Check the database path and schema version, then reopen the store. |
 
 ## Logging
 
