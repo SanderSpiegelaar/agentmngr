@@ -10,3 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 gpui-kit.workspace = true
+skm-core = { path = "../skm-core" }
+
+[dev-dependencies]
+tempfile.workspace = true
