@@ -18,6 +18,7 @@ use crate::{
 };
 
 mod copy;
+pub mod sync;
 pub use copy::{apply_project, plan_copy_project, plan_project};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
