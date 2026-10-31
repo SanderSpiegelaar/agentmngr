@@ -1,0 +1,43 @@
+version: 2.1
+
+executors:
+  macos:
+    macos:
+      xcode: 27.2.0
+    resource_class: m4pro.medium
+  linux:
+    docker:
+      - image: cimg/base:current
+
+jobs:
+  check:
+    parameters:
+      os:
+        type: executor
+      packages:
+        type: string
+    executor: << parameters.os >>
+    steps:
+      - checkout
+      - run:
+          name: Install Rust
+          command: |
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
+            echo 'source "$HOME/.cargo/env"' >> "$BASH_ENV"
+      # No args: installs the toolchain pinned in rust-toolchain.toml
+      - run: rustup toolchain install
+      - run: cargo fmt --check
+      - run: cargo clippy << parameters.packages >> --all-targets -- -D warnings
+      - run: cargo test << parameters.packages >>
+
+workflows:
+  ci:
+    jobs:
+      - check:
+          name: check-macos
+          os: macos
+          packages: --workspace
+      - check:
+          name: check-linux
+          os: linux
+          packages: --workspace --exclude skm-app
