@@ -27,6 +27,11 @@ pub fn content_hash(root: &Path) -> io::Result<String> {
     Ok(format!("{:x}", hash.finalize()))
 }
 
+/// Directories that never count as skill content, matching npx skills.
+pub fn is_ignored_dir(name: &std::ffi::OsStr) -> bool {
+    name == ".git" || name == "node_modules"
+}
+
 fn collect_files(
     root: &Path,
     directory: &Path,
@@ -37,7 +42,7 @@ fn collect_files(
         let kind = entry.file_type()?;
         let path = entry.path();
         if kind.is_dir() {
-            if entry.file_name() != ".git" && entry.file_name() != "node_modules" {
+            if !is_ignored_dir(&entry.file_name()) {
                 collect_files(root, &path, files)?;
             }
         } else if kind.is_file() {

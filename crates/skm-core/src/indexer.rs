@@ -329,7 +329,7 @@ fn inspect_skill(path: &Path, root: &Path, problems: &mut Vec<String>) -> Result
                 ));
             }
         } else if metadata.is_dir() {
-            if entry.file_name() != ".git" {
+            if !crate::content_hash::is_ignored_dir(&entry.file_name()) {
                 inspect_skill(&path, root, problems)?;
             }
         } else if metadata.len() > 5 * 1024 * 1024 {

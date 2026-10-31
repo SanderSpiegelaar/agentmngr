@@ -170,6 +170,24 @@ fn watcher_selected_nested_changes_refresh_warnings_and_invalidate_hash() -> Res
 }
 
 #[test]
+fn files_outside_the_content_hash_are_not_inspected() -> Result<(), Error> {
+    let (_root, paths, store) = setup();
+    skill(&paths, "test", "test skill");
+    for dir in ["node_modules", ".git"] {
+        let large = paths.library.join("skills/test").join(dir).join("large");
+        fs::create_dir_all(large.parent().unwrap())?;
+        fs::File::create(&large)?.set_len(5 * 1024 * 1024 + 1)?;
+    }
+    indexer::full_reindex(&store, &paths)?;
+    assert!(
+        !indexer::load(&store)?[0]
+            .problems_json
+            .contains("File exceeds 5 MB")
+    );
+    Ok(())
+}
+
+#[test]
 fn malformed_and_missing_metadata_are_indexed_as_problems() -> Result<(), Error> {
     let (_root, paths, store) = setup();
     fs::create_dir_all(paths.library.join("skills/missing"))?;
