@@ -105,6 +105,11 @@ impl Library {
                 self.schema
             )));
         }
+        for (name, set) in &self.sets {
+            if name.trim().is_empty() || !set.items.plugins.is_empty() {
+                return Err(config_error("sets need a name and cannot contain plugins"));
+            }
+        }
         for selection in std::iter::once(&self.global).chain(self.sets.values().map(|s| &s.items)) {
             for entries in [
                 &selection.mcp,

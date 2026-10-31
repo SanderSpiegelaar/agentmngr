@@ -186,3 +186,43 @@ body reads and malformed responses return `E_NETWORK`. Successful results are
 cached in memory per client and exact query/limit for 10 minutes, including empty
 results. Reuse the client to retain its cache. No downloads or leaderboard calls.
 The `live-tests` Cargo feature enables the otherwise excluded live smoke test.
+## Projects and sets (T-026)
+
+`projects::register(&store, path)` canonicalizes an existing directory and records
+an idempotent SQLite registration with `ProjectMode::Copy` and `auto_sync = true`.
+It creates nothing in the repository. `list`, `set_mode`, `set_auto_sync`,
+`use_set`, `unuse_set`, `used_sets`, `set_direct_item`, `remove_direct_item`, and
+`direct_items` manage machine-local state. They never apply filesystem changes.
+Direct selections return `DirectItem { item, agents }`, preserving NULL/inherit
+separately from an explicit wildcard agent list.
+`unregister` forgets local selections and ownership while leaving files untouched;
+callers implementing `--clean` must plan and apply cleanup before unregistering.
+
+Set definitions remain solely in `Library::sets` in `library.toml`.
+`Library::{create_set, update_set, delete_set}` mutate that model; persist with
+`Library::save`. `ItemSelection::{set_item, remove_item, entries}` handle membership
+by `ItemRef` and kind. Plugins are rejected in sets and direct project selections.
+Read/list sets through `Library::sets`. Set deletion can leave local project links;
+effective calculation treats missing definitions as empty, preserving those links
+for a later synced reappearance or explicit `unuse_set`.
+
+`projects::effective` unions selected sets and direct items, deduplicates skills,
+and subtracts Global selections per agent. Direct non-skill lists override set
+lists, including an empty list. Wildcards expand to enabled registry agents that
+support the kind at project scope. Explicit agents are also filtered for enabled
+support. `effective_project` loads local selections and enabled agents from SQLite.
+A NULL direct agent list inherits set membership when present, otherwise `*`;
+an explicit `["*"]` overrides the sets with all enabled supported agents.
+
+`projects::plan_set_change(&paths, &store, &before, &after, name, &registry)`
+returns `ProjectPlan { project, plan }` for exactly the projects using that set,
+including paused projects so callers can preview pending work. Call it with the
+old and new library snapshots, before removing project links. Only skill names
+from the old/new set are reconciled, using each project's effective post-edit
+selection, mode, and the existing engine's ownership checks. Removed members get
+explicit absent targets unless another set or direct selection retains them.
+`projects::plan_skills` exposes the same planner for an explicit skill-name scope.
+Neither function saves definitions, applies, writes lock files, or edits git
+excludes. Copy-mode lock integration, link-mode excludes, and auto-apply scheduling
+belong to T-027, T-029, and T-028 respectively. Non-skill selections are retained
+for M3 renderers but produce no filesystem actions in M1.
