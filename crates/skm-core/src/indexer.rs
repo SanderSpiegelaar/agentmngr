@@ -136,7 +136,7 @@ fn reindex(
                 .map(json_string).transpose()?;
             let before = previous.get(rel_path.as_str()).copied();
             seen.insert(rel_path.clone());
-            if !force && before.is_some_and(|row| row.stamp == stamp && row.file_stamp == file_stamp && row.source_json == source_json) {
+            if !force && ids.is_none() && before.is_some_and(|row| row.stamp == stamp && row.file_stamp == file_stamp && row.source_json == source_json) {
                 counts.unchanged += 1;
                 continue;
             }
@@ -148,7 +148,7 @@ fn reindex(
             if let Some(before) = before {
                 row.id = before.id;
                 row.indexed_at = before.indexed_at;
-                if row.stamp == before.stamp && row.file_stamp == before.file_stamp && row.meta_json == before.meta_json {
+                if ids.is_none() && row.stamp == before.stamp && row.file_stamp == before.file_stamp && row.meta_json == before.meta_json {
                     row.content_hash = before.content_hash.clone();
                 }
                 if &row == before {

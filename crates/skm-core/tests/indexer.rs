@@ -133,6 +133,43 @@ fn catch_up_changes_inserts_deletes_and_targets_ids() -> Result<(), Error> {
 }
 
 #[test]
+fn watcher_selected_nested_changes_refresh_warnings_and_invalidate_hash() -> Result<(), Error> {
+    let (_root, paths, store) = setup();
+    skill(&paths, "test", "test skill");
+    let nested = paths.library.join("skills/test/scripts/check");
+    fs::create_dir_all(nested.parent().unwrap())?;
+    fs::write(&nested, "before")?;
+    indexer::full_reindex(&store, &paths)?;
+    for size in [5 * 1024 * 1024 + 1, 6] {
+        store.write(|connection| {
+            connection.execute("UPDATE items SET content_hash='cached'", [])?;
+            Ok(())
+        })?;
+        let before = indexer::load(&store)?.remove(0);
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&nested)?
+            .set_len(size)?;
+        assert_eq!(indexer::catch_up(&store, &paths, None)?.unchanged, 1);
+        assert_eq!(indexer::load(&store)?.remove(0), before);
+        assert_eq!(
+            indexer::catch_up(&store, &paths, Some(&[before.id]))?.updated,
+            1
+        );
+        let after = indexer::load(&store)?.remove(0);
+        assert_eq!(after.id, before.id);
+        assert_eq!(after.stamp, before.stamp);
+        assert_eq!(after.file_stamp, before.file_stamp);
+        assert!(after.content_hash.is_none());
+        assert_eq!(
+            after.problems_json.contains("File exceeds 5 MB"),
+            size > 5 * 1024 * 1024
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn malformed_and_missing_metadata_are_indexed_as_problems() -> Result<(), Error> {
     let (_root, paths, store) = setup();
     fs::create_dir_all(paths.library.join("skills/missing"))?;
