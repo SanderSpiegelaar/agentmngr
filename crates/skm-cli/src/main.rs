@@ -36,6 +36,18 @@ enum Command {
     On { skill: String },
     /// Disable a skill globally.
     Off { skill: String },
+    /// List unmanaged universal skills and their lock provenance.
+    Foreign {
+        #[arg(long)]
+        project: Option<PathBuf>,
+    },
+    /// Explicitly import unmanaged skills into the library.
+    Adopt {
+        #[arg(required = true, num_args = 1..)]
+        names: Vec<String>,
+        #[arg(long)]
+        project: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<(), skm_core::Error> {
@@ -50,6 +62,59 @@ fn main() -> Result<(), skm_core::Error> {
     paths.ensure_layout()?;
     let _logging = skm_core::logging::init_logging(&paths.logs)?;
     match cli.command {
+        Some(Command::Foreign { project }) => {
+            let home = user_home.ok_or_else(|| std::io::Error::other("HOME is unavailable"))?;
+            let store = skm_core::store::Store::open(&paths)?;
+            for entry in
+                skm_core::foreign_skills::list_foreign(&paths, &store, &home, project.as_deref())?
+            {
+                println!("{}\t{:?}\t{:?}", entry.name, entry.class, entry.provenance);
+            }
+        }
+        Some(Command::Adopt { names, project }) => {
+            let home = user_home.ok_or_else(|| std::io::Error::other("HOME is unavailable"))?;
+            let store = skm_core::store::Store::open(&paths)?;
+            let issues = if cli.dry_run {
+                let plan = skm_core::foreign_skills::plan_adopt(
+                    &paths,
+                    &store,
+                    &home,
+                    &names,
+                    project.as_deref(),
+                )?;
+                println!("{}", plan.summary);
+                for action in &plan.actions {
+                    println!("{:?}", action.action);
+                }
+                plan.issues
+            } else {
+                let result = skm_core::foreign_skills::adopt(
+                    &paths,
+                    &store,
+                    &home,
+                    &names,
+                    project.as_deref(),
+                )?;
+                println!(
+                    "{} actions, {} issues, {} failed",
+                    result.done.len(),
+                    result.issues.len(),
+                    result.failed.len()
+                );
+                result.issues.into_iter().chain(result.failed).collect()
+            };
+            for issue in &issues {
+                eprintln!(
+                    "{}: {}: {}",
+                    issue.code,
+                    issue.target.display(),
+                    issue.message
+                );
+            }
+            if !issues.is_empty() {
+                std::process::exit(3);
+            }
+        }
         Some(Command::Undo { op_id, list }) => {
             let store = skm_core::store::Store::open(&paths)?;
             if list {

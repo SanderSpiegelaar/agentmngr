@@ -135,7 +135,7 @@ fn prepare(
     Ok((library, plan))
 }
 
-fn validate_name(name: &str) -> Result<(), Error> {
+pub(crate) fn validate_name(name: &str) -> Result<(), Error> {
     if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) {
         return Err(Error::InvalidSkill(
             "skill name must be one directory name".into(),

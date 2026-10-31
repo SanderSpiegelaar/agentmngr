@@ -18,12 +18,13 @@ It takes a nonblocking fd-lock only during apply. A competing process receives
 `E_LOCKED`. Every completed apply, including empty plans and partial batches,
 writes an ops row and touches `.changed`; optional events follow lock release.
 
-`Action` contains `Link`, `WriteFile`, `CopyTree`, `Trash`, and `Restore`.
+`Action` contains `Link`, `WriteFile`, `CopyTree`, `Claim`, `Trash`, and `Restore`.
 `PlannedAction` pairs the effect with its expected `Observation`, resulting
 ownership, and explicit modified-content approval. Apply checks the observation,
 ledger, and ownership rule again, even for manually constructed plans. Foreign
-targets never become actions. `approve_modified` applies only to ledger-owned
-files or trees, not foreign entries.
+targets never become ordinary reconciliation actions. `approve_modified` applies
+only to ledger-owned files or trees, not foreign entries. Adoption is the explicit
+exception described below.
 
 Repeated identical item/destination requests collapse into one action. Different
 content or items at one destination produce an issue instead. Registry-specific
@@ -58,10 +59,64 @@ produce a partial result, as with regular apply. `Restore` copies hash-verified
 trash backups, keeping them available. `skm undo [op-id]` runs undo and
 `skm undo --list` lists history.
 
-T-020 must introduce explicit, snapshot-bound adoption authorization;
-`approve_modified` deliberately cannot authorize foreign targets. Undo acceptance
-tests exercise adoption's copy/replace/link effects with a ledger-owned original
-directory until that authorization exists.
+## Foreign skills and adoption (T-020)
+
+`foreign_skills::list_foreign(&paths, &store, user_home, project)` reads universal
+skills and returns `ForeignSkill` entries with classification and optional lock
+provenance. `project` is an optional project directory; `None` selects Global.
+Absent entries, our links, and exact ledger-owned project copies are omitted.
+Discovery and `plan_adopt(..., &names, project)` create no target directories,
+scopes, operations or metadata. SQLite reads may update its runtime shared-memory
+file, not desired state or skill content. CLI initialization can still create the
+manager layout, logs and database as it does for other previews.
+
+`foreign_skills::adopt` binds the preview to a real scope and calls engine apply
+once. Global adoption plans `CopyTree` into `library/skills/<name>`, then `Link`
+at the original target, then `WriteFile` for rendered `library.toml`. `CopyTree`
+checks both the exact engine fingerprint and its optional npx `computed_hash`
+on staged content before publishing. `Link` moves an original directory into
+the operation's trash before publishing the staged link; original symlinks are
+backed up without following them. Original symlink destinations are copied as
+real trees into the library, but never edited.
+
+Project copy adoption plans `CopyTree`, then `Claim` (ledger-only, no filesystem
+edit), then metadata. It leaves the project copy and `skills-lock.json` unchanged.
+Existing identical library trees are reused and not removed by undo. Different
+content, including differences hidden by npx hash exclusions, produces
+`E_NAME_COLLISION` and no actions for that skill. Project link-mode scopes refuse.
+
+`PlannedAction::authorize_adoption()` captures the complete `before` observation
+in `AdoptionAuthorization`, including the exact fingerprint and path. Rebinding
+`before` cannot transfer permission to changed content. Apply re-observes targets
+under the lock, checks this authorization, and checks `requires` observations
+before each effect. Dependent links/claims and metadata refuse if earlier effects
+failed or their inputs changed. `approve_modified` cannot substitute for adoption.
+Like other engine batches, unexpected failures can leave a partial operation;
+only completed effects are journaled, not an all-or-nothing transaction.
+
+Claim, library content, original target and metadata all have guarded inverses
+in the same ops row. Undo restores the exact original tree or raw symlink,
+restores metadata and ownership, and removes only newly imported library content.
+Undo of undo reuses snapshot-bound authorization; a guarded adoption inverse may
+restore a previous owner from another scope for shared library metadata.
+
+Lock parsing follows vercel-labs/skills commit
+`92a9a34ac3bf88e695e468b90c7bf32f163d32c8`, `src/skill-lock.ts` (global v3,
+`~/.agents/.skill-lock.json`) and `src/local-lock.ts` (project v1,
+`<project>/skills-lock.json`). Missing locks are optional; invalid/unsupported locks
+return `E_CONFIG_PARSE` without writes. GitHub/git entries become Git provenance;
+local sources resolve relative to their lock root; other providers retain their
+source type, identifier, URL, ref and path as `SkillSource::Npx`. GitHub's global
+`skillFolderHash` is a tree SHA, never a commit revision or `base_hash`. Adoption
+records the verified actual npx content hash as `base_hash` and retains a v3
+`installedAt` timestamp. Existing library provenance is preserved when reusing an
+identical item. The planner remains one cohesive operation builder; lock dialect
+parsing lives in its private `locks` module.
+
+`skm foreign [--project <dir>]` lists entries and provenance.
+`skm adopt <name>... [--project <dir>] [--dry-run]` prints the same exact engine
+actions in dry-run mode, without persisting selection, provenance or claims.
+Names are single directory names. Refusals exit 3.
 
 ## Global skills (T-019)
 

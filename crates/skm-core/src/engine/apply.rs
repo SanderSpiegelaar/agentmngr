@@ -108,12 +108,19 @@ fn persist(
 fn validate(paths: &Paths, planned: &PlannedAction, scope_id: i64) -> Result<(), Error> {
     let target = planned.action.target();
     if target != planned.before.target
-        || !writable(&planned.before, scope_id, planned.approve_modified)
+        || (!writable(&planned.before, scope_id, planned.approve_modified)
+            && !planned.adoption_matches())
+        || (planned.adoption.is_some() && !planned.adoption_matches())
     {
         return Err(Error::ForeignTarget("target is not writable".into()));
     }
     if let Some(owner) = &planned.owner {
-        if owner.scope_id != scope_id
+        if (owner.scope_id != scope_id
+            && !(planned.adoption_matches()
+                && matches!(
+                    planned.action,
+                    Action::Restore { .. } | Action::Claim { .. }
+                )))
             || !matches!(
                 owner.how.as_str(),
                 "link" | "copy" | "file" | "lock" | "exclude"
@@ -123,7 +130,10 @@ fn validate(paths: &Paths, planned: &PlannedAction, scope_id: i64) -> Result<(),
         }
     } else if !matches!(planned.action, Action::Trash { .. }) {
         // Restore may put back a previously unledgered OurLink.
-        if !matches!(planned.action, Action::Restore { .. }) {
+        if !matches!(
+            planned.action,
+            Action::Restore { .. } | Action::Claim { .. }
+        ) {
             return Err(Error::ConfigChanged(
                 "created targets need ownership".into(),
             ));
@@ -152,6 +162,13 @@ fn validate(paths: &Paths, planned: &PlannedAction, scope_id: i64) -> Result<(),
     if matches!(planned.action, Action::Trash { .. }) && planned.owner.is_some() {
         return Err(Error::ConfigChanged(
             "removed target cannot retain ownership".into(),
+        ));
+    }
+    if matches!(planned.action, Action::Claim { .. })
+        && planned.before.state.class != TargetClass::RealDir
+    {
+        return Err(Error::ForeignTarget(
+            "only a real project copy can be claimed".into(),
         ));
     }
     Ok(())
@@ -250,10 +267,25 @@ pub(super) fn apply_checked(
                 ));
             }
             validate(paths, planned, plan.scope_id)?;
+            for required in &planned.requires {
+                if observe(paths, store, std::slice::from_ref(&required.target))?.remove(0)
+                    != *required
+                {
+                    return Err(Error::ConfigChanged(format!(
+                        "adoption prerequisite changed: {}",
+                        required.target.display()
+                    )));
+                }
+            }
             let backup = trash.join(index.to_string());
             let existed = current.state.class != TargetClass::Absent;
             filesystem::execute(&planned.action, &backup, existed, paths, &current.state)?;
             let state = filesystem::snapshot(&target, paths)?;
+            if matches!(planned.action, Action::Claim { .. }) && state != current.state {
+                return Err(Error::ConfigChanged(
+                    "project copy changed during claim".into(),
+                ));
+            }
             let mut owner = planned.owner.clone();
             if let Some(owner) = &mut owner
                 && !matches!(planned.action, Action::Restore { .. })
@@ -263,7 +295,11 @@ pub(super) fn apply_checked(
                     .clone()
                     .ok_or_else(|| Error::ConfigChanged("created target vanished".into()))?;
             }
-            let inverse = if existed {
+            let inverse = if matches!(planned.action, Action::Claim { .. }) {
+                Action::Claim {
+                    target: target.clone(),
+                }
+            } else if existed {
                 Action::Restore {
                     target: target.clone(),
                     from: backup,
@@ -274,20 +310,23 @@ pub(super) fn apply_checked(
                     target: target.clone(),
                 }
             };
-            result.inverse.insert(
-                0,
-                PlannedAction {
-                    action: inverse,
-                    before: Observation {
-                        target: target.clone(),
-                        state,
-                        ledger: owner.clone(),
-                        parents_safe: true,
-                    },
-                    owner: current.ledger,
-                    approve_modified: false,
+            let mut inverse = PlannedAction {
+                action: inverse,
+                before: Observation {
+                    target: target.clone(),
+                    state,
+                    ledger: owner.clone(),
+                    parents_safe: true,
                 },
-            );
+                owner: current.ledger,
+                approve_modified: false,
+                adoption: None,
+                requires: Vec::new(),
+            };
+            if planned.adoption.is_some() {
+                inverse.authorize_adoption();
+            }
+            result.inverse.insert(0, inverse);
             persist(store, op_id, target.clone(), owner, &result.inverse)?;
             Ok(())
         })();

@@ -75,6 +75,16 @@ pub enum SkillSource {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         origin: Option<PathBuf>,
     },
+    Npx {
+        source: String,
+        source_type: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
+        #[serde(rename = "ref", default, skip_serializing_if = "Option::is_none")]
+        reference: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+    },
 }
 
 impl Library {

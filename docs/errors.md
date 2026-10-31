@@ -21,6 +21,12 @@
 | `E_LOGGING` | Log file or subscriber initialization failed. | Check the logs directory and initialize logging only once. |
 | `E_DATABASE` | Database access, migration, or writer communication failed. | Check the database path and schema version, then reopen the store. |
 
+Foreign adoption uses the existing stable codes: `E_NAME_COLLISION` for different
+library content, `E_CONFIG_CHANGED` for stale observations or failed hash checks,
+`E_FOREIGN_TARGET` for missing/mismatched adoption permission or unsafe ancestors,
+`E_INVALID_SKILL` for non-directory or broken skill sources, and `E_CONFIG_PARSE`
+for invalid or unsupported npx locks. No new error variants are introduced.
+
 ## Logging
 
 Call `logging::init_logging(&home.join("logs"))` once at application startup and
