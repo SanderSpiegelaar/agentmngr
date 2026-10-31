@@ -9,6 +9,7 @@ rust-version = "1.96.1"
 
 [workspace.dependencies]
 rusqlite = { version = "0.38", features = ["bundled"] }
+serde_yaml_ng = "0.10"
 icu_collator = "2.4"
 rayon = "1.11"
 sha2 = "0.10"
