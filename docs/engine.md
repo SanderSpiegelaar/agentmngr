@@ -140,3 +140,16 @@ registry target or agent-specific skills directory is used. `skm on <skill>` and
 `skm off <skill>` call the core API; `--dry-run` prints the plan and issues, and
 refusals exit 3. CLI initialization may still create the manager layout, logs and
 SQLite database during a dry run, but does not save desired state or apply links.
+
+## Source specs (T-022)
+
+`source::parse(spec, path)` returns `Source::GitHub`, `Git`, `Local`, or
+`SkillsSh`. `path: Option<&str>` is the separate `--path` argument, accepted only
+with git URLs. Git sources retain their URL, optional ref and relative subpath;
+GitHub and skills.sh selections retain owner, repo and skill name (optional for
+GitHub). Parsing performs no filesystem or network access. Local paths must be
+explicit (`./`, `../`, or absolute) and are retained without home expansion.
+GitHub tree URLs use the first segment after `tree/` as the ref. For refs containing
+slashes, use a repository URL with `#feature/branch` and a separate `--path`.
+Ambiguous specs and conflicting selectors return `E_CONFIG_PARSE` with a specific
+correction in the message.
