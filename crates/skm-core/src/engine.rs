@@ -60,6 +60,7 @@ impl Action {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TargetState {
     pub class: TargetClass,
+    pub mode: Option<u32>,
     /// Exact filesystem fingerprint, including links and ignored tree content.
     pub hash: Option<String>,
 }
@@ -251,7 +252,8 @@ pub fn plan(scope_id: i64, desired: &[DesiredTarget], current: &[Observation]) -
             }
             DesiredContent::File { bytes } => {
                 if observed.state.class == TargetClass::RealFile
-                    && observed.state.hash == Some(filesystem::file_hash(bytes))
+                    && observed.state.hash
+                        == Some(filesystem::file_hash(bytes, observed.state.mode))
                 {
                     continue;
                 }

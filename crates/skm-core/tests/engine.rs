@@ -2,7 +2,10 @@
 
 use std::{
     fs,
-    os::unix::{fs::symlink, process::ExitStatusExt},
+    os::unix::{
+        fs::{PermissionsExt, symlink},
+        process::ExitStatusExt,
+    },
     path::{Path, PathBuf},
     process::{Command, Stdio},
     time::{Duration, Instant},
@@ -161,6 +164,64 @@ proptest! {
         let second = fixture.plan(&desired);
         prop_assert!(second.actions.is_empty());
         prop_assert!(second.issues.is_empty());
+    }
+}
+
+#[test]
+fn mode_only_change_between_plan_and_apply_is_refused() {
+    for (kind, relative) in [(2, ""), (3, ""), (3, "scripts"), (3, "scripts/check")] {
+        let fixture = Fixture::new();
+        let target = fixture.root.join("target");
+        assert_eq!(
+            fixture
+                .apply(&fixture.plan(&[fixture.desired(target.clone(), kind)]))
+                .done
+                .len(),
+            1
+        );
+        let plan = fixture.plan(&[fixture.desired(target.clone(), 0)]);
+        assert_eq!(plan.actions.len(), 1);
+        let changed = if relative.is_empty() {
+            target.clone()
+        } else {
+            target.join(relative)
+        };
+        let mode = fs::metadata(&changed).unwrap().permissions().mode() & 0o7777;
+        fs::set_permissions(&changed, fs::Permissions::from_mode(mode ^ 0o010)).unwrap();
+        let result = fixture.apply(&plan);
+        assert!(result.done.is_empty(), "{kind}: {relative}");
+        assert_eq!(result.issues[0].code, "E_CONFIG_CHANGED");
+        assert!(target.exists());
+    }
+}
+
+#[test]
+fn mode_only_change_after_apply_makes_undo_refuse() {
+    for (kind, relative) in [(2, ""), (3, ""), (3, "scripts"), (3, "scripts/check")] {
+        let fixture = Fixture::new();
+        let target = fixture.root.join("target");
+        let applied = fixture.apply(&fixture.plan(&[fixture.desired(target.clone(), kind)]));
+        assert_eq!(applied.done.len(), 1);
+        let changed = if relative.is_empty() {
+            target.clone()
+        } else {
+            target.join(relative)
+        };
+        let mode = fs::metadata(&changed).unwrap().permissions().mode() & 0o7777;
+        fs::set_permissions(&changed, fs::Permissions::from_mode(mode ^ 0o010)).unwrap();
+        let error = engine::undo(
+            &fixture.paths,
+            &fixture.store,
+            Some(applied.op_id),
+            "test",
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(error.code(), "E_CONFIG_CHANGED");
+        let plan = fixture.plan(&[fixture.desired(target.clone(), 0)]);
+        assert!(plan.actions.is_empty());
+        assert_eq!(plan.issues[0].code, "E_PROJECT_EDITED");
+        assert!(target.exists());
     }
 }
 

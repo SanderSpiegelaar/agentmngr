@@ -292,6 +292,7 @@ pub fn plan_adopt(
                 &copy,
                 TargetState {
                     class: TargetClass::RealDir,
+                    mode: source_before.state.mode,
                     hash: Some(hash),
                 },
             );
@@ -325,6 +326,7 @@ pub fn plan_adopt(
             before.state
         } else {
             TargetState {
+                mode: None,
                 class: TargetClass::OurLink(ItemRef {
                     kind: ItemKind::Skill,
                     name: name.clone(),

@@ -20,14 +20,35 @@ pub fn snapshot(path: &Path, paths: &Paths) -> Result<TargetState, Error> {
     } else {
         Some(fingerprint(path)?)
     };
-    Ok(TargetState { class, hash })
+    let mode = if matches!(class, TargetClass::RealFile | TargetClass::RealDir) {
+        permission_bits(&fs::symlink_metadata(path)?)
+    } else {
+        None
+    };
+    Ok(TargetState { class, mode, hash })
 }
 
-pub(super) fn file_hash(bytes: &[u8]) -> String {
+pub(super) fn file_hash(bytes: &[u8], mode: Option<u32>) -> String {
     let mut hash = Sha256::new();
     hash.update(b"file\0");
+    if let Some(mode) = mode {
+        hash.update(mode.to_le_bytes());
+    }
     hash.update(bytes);
     format!("{:x}", hash.finalize())
+}
+
+fn permission_bits(metadata: &fs::Metadata) -> Option<u32> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        Some(metadata.permissions().mode() & 0o7777)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        None
+    }
 }
 
 pub(crate) fn link_hash(to: &Path) -> String {
@@ -43,13 +64,16 @@ pub(super) fn fingerprint(path: &Path) -> io::Result<String> {
         return Ok(link_hash(&fs::read_link(path)?));
     }
     if meta.is_file() {
-        return Ok(file_hash(&fs::read(path)?));
+        return Ok(file_hash(&fs::read(path)?, permission_bits(&meta)));
     }
     if !meta.is_dir() {
         return Err(io::Error::other("unsupported filesystem entry"));
     }
     let mut hash = Sha256::new();
     hash.update(b"directory\0");
+    if let Some(mode) = permission_bits(&meta) {
+        hash.update(mode.to_le_bytes());
+    }
     let mut children = fs::read_dir(path)?.collect::<Result<Vec<_>, _>>()?;
     children.sort_by_key(|child| child.file_name());
     for child in children {
