@@ -17,6 +17,9 @@ use crate::{
     target::{ItemKind, ItemRef},
 };
 
+mod copy;
+pub use copy::{apply_project, plan_copy_project, plan_project};
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProjectMode {
@@ -361,7 +364,11 @@ pub fn plan_set_change(
         .into_iter()
         .map(|project| {
             let selection = effective_project(store, after, project.id, registry)?;
-            let plan = plan_skills(paths, store, &project, &selection, &names)?;
+            let plan = if project.mode == ProjectMode::Copy {
+                plan_copy_project(paths, store, &project, after, &selection, &names)?
+            } else {
+                plan_skills(paths, store, &project, &selection, &names)?
+            };
             Ok(ProjectPlan { project, plan })
         })
         .collect()
