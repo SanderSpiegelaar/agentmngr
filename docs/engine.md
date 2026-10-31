@@ -39,10 +39,20 @@ never partially populated. Cross-filesystem trash renames fail safely with
 partial content at the requested destination. This is per-target atomicity, not
 an all-or-nothing transaction over the whole plan or SQLite and the filesystem.
 
-For T-018, deserialize `ops.inverse_json` as `Vec<PlannedAction>` and use it in a
-`Plan` with the original `scope_id`. Each inverse expects the exact post-apply
-fingerprint and ledger row, so later edits refuse with `E_CONFIG_CHANGED`.
-`Restore` copies a hash-verified trash backup, keeping the backup available.
-The inverse runner, last-50 selection, and adoption approval belong to T-018 and
-T-020, not this ticket. T-020 must introduce an explicit, snapshot-bound adoption
-authorization; `approve_modified` deliberately cannot authorize foreign targets.
+`engine::list_ops(&store)` returns the last 50 operations, newest first.
+`engine::undo(&paths, &store, op_id, actor, events)` selects one of those operations
+(`None` selects the latest), deserializes its inverses, and reuses apply with the
+original scope. Undo itself records an operation and can be undone. Unfinished
+`applying` operations, unknown IDs, and empty history refuse with `E_CONFIG_CHANGED`.
+Under the apply lock, undo preflights every target's exact post-apply fingerprint
+and ledger row and every restore backup before changing any target. A known
+conflict refuses the whole undo without adding an ops row. Per-action checks
+remain in place; filesystem failures or external edits during execution can still
+produce a partial result, as with regular apply. `Restore` copies hash-verified
+trash backups, keeping them available. `skm undo [op-id]` runs undo and
+`skm undo --list` lists history.
+
+T-020 must introduce explicit, snapshot-bound adoption authorization;
+`approve_modified` deliberately cannot authorize foreign targets. Undo acceptance
+tests exercise adoption's copy/replace/link effects with a ledger-owned original
+directory until that authorization exists.

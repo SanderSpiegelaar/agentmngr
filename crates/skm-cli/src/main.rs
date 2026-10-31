@@ -23,6 +23,13 @@ enum Command {
     },
     /// List registered agents and their detection and management status.
     Agents,
+    /// Undo a recent operation, or list the last 50 operations.
+    Undo {
+        #[arg(conflicts_with = "list")]
+        op_id: Option<i64>,
+        #[arg(long)]
+        list: bool,
+    },
 }
 
 fn main() -> Result<(), skm_core::Error> {
@@ -37,6 +44,38 @@ fn main() -> Result<(), skm_core::Error> {
     paths.ensure_layout()?;
     let _logging = skm_core::logging::init_logging(&paths.logs)?;
     match cli.command {
+        Some(Command::Undo { op_id, list }) => {
+            let store = skm_core::store::Store::open(&paths)?;
+            if list {
+                println!("ID\tAT\tACTOR\tRESULT\tSUMMARY");
+                for op in skm_core::engine::list_ops(&store)? {
+                    println!(
+                        "{}\t{}\t{}\t{}\t{}",
+                        op.id, op.at, op.actor, op.result, op.summary
+                    );
+                }
+            } else {
+                let result = match skm_core::engine::undo(&paths, &store, op_id, "cli", None) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        eprintln!("{}: {}", error.code(), error);
+                        std::process::exit(1);
+                    }
+                };
+                println!("op {}: {} undone", result.op_id, result.done.len());
+                for issue in result.issues.iter().chain(&result.failed) {
+                    eprintln!(
+                        "{}: {}: {}",
+                        issue.code,
+                        issue.target.display(),
+                        issue.message
+                    );
+                }
+                if !result.issues.is_empty() || !result.failed.is_empty() {
+                    std::process::exit(3);
+                }
+            }
+        }
         Some(Command::Agents) => {
             let home = user_home.ok_or_else(|| std::io::Error::other("HOME is unavailable"))?;
             let config = skm_core::config::Config::load(&paths.config_file)?;

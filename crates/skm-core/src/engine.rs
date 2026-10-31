@@ -7,9 +7,11 @@ use crate::target::{ItemRef, TargetClass};
 
 mod apply;
 mod filesystem;
+mod undo;
 
 pub use apply::{apply, observe};
 pub use filesystem::snapshot;
+pub use undo::{Operation, list_ops, undo};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
