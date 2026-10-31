@@ -6,6 +6,7 @@ pub mod frontmatter;
 pub mod library;
 pub mod logging;
 pub mod paths;
+pub mod registry;
 pub mod store;
 pub mod target;
 

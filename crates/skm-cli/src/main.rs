@@ -16,6 +16,8 @@ struct Cli {
 enum Command {
     /// Print resolved paths.
     Doctor,
+    /// List registered agents and their detection and management status.
+    Agents,
 }
 
 fn main() -> Result<(), skm_core::Error> {
@@ -29,19 +31,43 @@ fn main() -> Result<(), skm_core::Error> {
     )?;
     paths.ensure_layout()?;
     let _logging = skm_core::logging::init_logging(&paths.logs)?;
-    if let Some(Command::Doctor) = cli.command {
-        for (name, path) in [
-            ("home", &paths.home),
-            ("library", &paths.library),
-            ("cache", &paths.cache),
-            ("trash", &paths.trash),
-            ("logs", &paths.logs),
-            ("config", &paths.config_file),
-            ("db", &paths.db_file),
-            ("lock", &paths.lock_file),
-        ] {
-            println!("{name}: {}", path.display());
+    match cli.command {
+        Some(Command::Agents) => {
+            let home = user_home.ok_or_else(|| std::io::Error::other("HOME is unavailable"))?;
+            let config = skm_core::config::Config::load(&paths.config_file)?;
+            let registry = skm_core::registry::Registry::load()?.resolve(
+                &home,
+                &std::env::vars_os()
+                    .filter_map(|(key, value)| key.into_string().ok().map(|key| (key, value)))
+                    .collect(),
+                &config,
+            )?;
+            let path = std::env::var_os("PATH").unwrap_or_default();
+            // Detection does not opt an agent into management.
+            let statuses = registry.detect(&path, &Default::default())?;
+            println!("{:<14} {:<20} {:<10} ENABLED", "ID", "AGENT", "DETECTED");
+            for status in statuses {
+                println!(
+                    "{:<14} {:<20} {:<10} {}",
+                    status.id, status.name, status.detected, status.enabled
+                );
+            }
         }
+        Some(Command::Doctor) => {
+            for (name, path) in [
+                ("home", &paths.home),
+                ("library", &paths.library),
+                ("cache", &paths.cache),
+                ("trash", &paths.trash),
+                ("logs", &paths.logs),
+                ("config", &paths.config_file),
+                ("db", &paths.db_file),
+                ("lock", &paths.lock_file),
+            ] {
+                println!("{name}: {}", path.display());
+            }
+        }
+        None => {}
     }
     Ok(())
 }
