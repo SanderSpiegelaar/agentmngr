@@ -3,7 +3,7 @@ version: 2.1
 executors:
   macos:
     macos:
-      xcode: 27.2.0
+      xcode: 27.1.0
     resource_class: m4pro.medium
   linux:
     docker:
